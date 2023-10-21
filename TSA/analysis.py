@@ -1,11 +1,13 @@
+import re
+
 import numpy as np
 import pandas as pd
-import re
 import scipy
 from matplotlib import pyplot as plt
 from matplotlib import patches
 from scipy.signal import correlate, correlation_lags
 import statsmodels.tsa.stattools as stats
+
 
 def autolags(y):
     """
@@ -14,7 +16,8 @@ def autolags(y):
     Parameters:
     - y: Data to calculate amount of lags from.
     """
-    return int(round( 15*(len(y)/100)**0.25 ))
+    return int(round(15*(len(y)/100)**0.25))
+
 
 def acf(y, maxOrd='auto', signLvl=0.05, plotIt=False, maOrder=0, includeZeroLag=True):
     """
@@ -40,7 +43,7 @@ def acf(y, maxOrd='auto', signLvl=0.05, plotIt=False, maOrder=0, includeZeroLag=
         raise ValueError('ACF: call with maOrder larger than maxOrd.')
     if not 0 <= signLvl <= 1:
         raise ValueError('ACF: not a valid level of significance.')
-    
+
     signScale = scipy.stats.norm.ppf(1 - signLvl / 2, 0, 1)
     rho, _ = stats.acf(y, nlags=maxOrd, alpha=signLvl, fft=False)
 
@@ -68,6 +71,7 @@ def acf(y, maxOrd='auto', signLvl=0.05, plotIt=False, maOrder=0, includeZeroLag=
 
     return rho
 
+
 def pacf(y, maxOrd='auto', signLvl=0.05, plotIt=False, includeZeroLag=True):
     """
     Computes the partial auto-correlation function (PACF) of a given time series.
@@ -89,7 +93,7 @@ def pacf(y, maxOrd='auto', signLvl=0.05, plotIt=False, includeZeroLag=True):
 
     if not 0 <= signLvl <= 1:
         raise ValueError('PACF: not a valid level of significance.')
-    
+
     signScale = scipy.stats.norm.ppf(1 - signLvl / 2, 0, 1)
     y = y - np.mean(y)
     phi = stats.pacf_yw(y, nlags=maxOrd, method='mle')
@@ -117,6 +121,7 @@ def pacf(y, maxOrd='auto', signLvl=0.05, plotIt=False, includeZeroLag=True):
         # plt.show()
 
     return phi
+
 
 def tacf(y, maxOrd='auto', alpha=0.02, signLvl=0.05, plotIt=False, includeZeroLag=True, titleStr=None):
     """
@@ -192,6 +197,7 @@ def tacf(y, maxOrd='auto', alpha=0.02, signLvl=0.05, plotIt=False, includeZeroLa
 
     return rho
 
+
 def plotACFnPACF(y, noLags='auto', titleStr=None, signLvl=0.05, realis=False, includeZeroLag=True, return_val=False):
     """
     Plots the Autocorrelation Function (ACF) and Partial Autocorrelation Function (PACF) of the given data.
@@ -225,18 +231,19 @@ def plotACFnPACF(y, noLags='auto', titleStr=None, signLvl=0.05, realis=False, in
     plt.subplot(pl, 1, 1+i)
     acfEst = acf(y, noLags, signLvl, plotIt=True, includeZeroLag=includeZeroLag)
     plt.title(f'ACF ({titleStr})') if titleStr else plt.title('ACF')
-    
-    plt.subplot(pl, 1, 2+i) 
+
+    plt.subplot(pl, 1, 2+i)
     pacfEst = pacf(y, noLags, signLvl, plotIt=True, includeZeroLag=includeZeroLag)
     plt.title(f'PACF ({titleStr})') if titleStr else plt.title('PACF')
-    
+
     plt.tight_layout()
     plt.show()
-    
+
     if return_val:
         return acfEst, pacfEst
 
     pass
+
 
 def plot_cum_per(x, alpha=0.05, plotIt=True, titleStr=None, return_val=False):
     """
@@ -254,7 +261,7 @@ def plot_cum_per(x, alpha=0.05, plotIt=True, titleStr=None, return_val=False):
     - tuple: Cumulative periodogram (C), lower (x1) and upper (x2) confidence intervals, and confidence interval multiplier (Ka). 
              Ka is 0 if `alpha` is unsupported.
     """
-    
+
     N = len(x)
     X = np.abs(np.fft.fft(x))**2
     S = np.sum(X)/2
@@ -291,10 +298,11 @@ def plot_cum_per(x, alpha=0.05, plotIt=True, titleStr=None, return_val=False):
         plt.title(f'Cumulative Periodogram ({titleStr})') if titleStr else plt.title('Cumulative Periodogram')
         plt.show()
 
-    if return_val:    
+    if return_val:
         return C, x1, x2, Ka
 
-def xcorr(x,y=None, maxlag=None, biased=False):
+
+def xcorr(x, y=None, maxlag=None, biased=False):
     """
     Compute the cross-correlation between two signals.
 
@@ -309,23 +317,25 @@ def xcorr(x,y=None, maxlag=None, biased=False):
     - lags (array-like): Lags of correlation.
     - corr (array-like): Cross-correlation coefficients.
     """
-    
-    if y is None: y=x
+
+    if y is None:
+        y = x
 
     corr = correlate(x, y)
     lags = correlation_lags(len(x), len(y))
 
     if maxlag:
         mid = len(corr) // 2
-        corr = corr[mid-maxlag:mid+maxlag+1]
-        lags = lags[mid-maxlag:mid+maxlag+1]
+        corr = corr[mid - maxlag:mid + maxlag + 1]
+        lags = lags[mid - maxlag:mid + maxlag + 1]
 
     if biased:
-        corr = corr/len(x)
+        corr = corr / len(x)
 
     return lags, corr
 
-def ccf(y1, y2, numLags=None, titleStr=None , N=None, plotIt=True):
+
+def ccf(y1, y2, numLags=None, titleStr=None, N=None, plotIt=True):
     """
     Compute the normalized cross-correlation between two signals and optionally visualize the result.
 
@@ -341,44 +351,44 @@ def ccf(y1, y2, numLags=None, titleStr=None , N=None, plotIt=True):
     """
     y1 = y1.copy()
     y2 = y2.copy()
-    
+
     L1, L2 = len(y1), len(y2)
     if numLags is None:
-        numLags = min(L1,L2)-1
-    numLags = min(numLags, min(L1,L2)-1)
+        numLags = min(L1, L2)-1
+    numLags = min(numLags, min(L1, L2)-1)
     if N is None:
-        N = max(L1,L2)
+        N = max(L1, L2)
 
     # Subtract the mean from both sequences
     y1 = y1 - np.mean(y1)
     y2 = y2 - np.mean(y2)
-    
+
     # Equalize the lengths of the sequences
     if L1 > L2:
         y2 = np.pad(y2, (0, L1-L2), 'constant')
     elif L1 < L2:
         y1 = np.pad(y1, (0, L2-L1), 'constant')
-    
+
     # Compute the FFT of both sequences
     nFFT = 2**(np.ceil(np.log2(max([L1, L2]))).astype(int) + 1)
     F_y1 = np.fft.fft(y1, nFFT)
     F_y2 = np.fft.fft(y2, nFFT)
-    
+
     # Compute the autocorrelation of each sequence
     ACF1 = np.fft.ifft(F_y1 * np.conj(F_y1)).real
     ACF2 = np.fft.ifft(F_y2 * np.conj(F_y2)).real
-    
+
     # Compute the cross-correlation using the FFT
     xcf = np.fft.ifft(F_y1 * np.conj(F_y2)).real
     xcf = np.hstack([xcf[-(numLags+1):], xcf[:numLags+1]])  # taking values from the end and start of the array
-    
+
     # Normalize the cross-correlation
     xcf = xcf / (np.sqrt(ACF1[0]) * np.sqrt(ACF2[0]))
     xcf = xcf[-1:0:-1]
 
     if plotIt:
         rangeLags = np.arange(-numLags, numLags+1, 1)
-        _,_,baseline = plt.stem(rangeLags, xcf)
+        _, _, baseline = plt.stem(rangeLags, xcf)
         baseline.set_color('black')
         plt.xlabel('Lag')
         plt.ylabel('Amplitude')
@@ -392,8 +402,9 @@ def ccf(y1, y2, numLags=None, titleStr=None , N=None, plotIt=True):
         plt.grid()
         plt.show()
         return
-    
+
     return xcf
+
 
 def normplot(X, titleStr=None, return_val=False):
     """
@@ -410,20 +421,21 @@ def normplot(X, titleStr=None, return_val=False):
 
     (quantiles, values), (slope, intercept, r) = scipy.stats.probplot(X, dist='norm')
 
-    plt.plot(values, quantiles,'xb')
+    plt.plot(values, quantiles, 'xb')
     plt.plot(quantiles * slope + intercept, quantiles, 'r')
 
     #define ticks
-    ticks_perc=[0.01, 0.05, 0.10, 0.20, 0.50, 0.80, 0.90, 0.95, 0.99]
+    ticks_perc = [0.01, 0.05, 0.10, 0.20, 0.50, 0.80, 0.90, 0.95, 0.99]
     #transfrom them from precentile to cumulative density
-    ticks_quan=[scipy.stats.norm.ppf(i) for i in ticks_perc]
-    plt.yticks(ticks_quan,ticks_perc)
+    ticks_quan = [scipy.stats.norm.ppf(i) for i in ticks_perc]
+    plt.yticks(ticks_quan, ticks_perc)
 
     plt.title(f'Normal probability plot ({titleStr})') if titleStr else plt.title(f'Normal probability plot')
     plt.grid()
     plt.show()
     if return_val:
         return values
+
 
 def resid(fitted_model, y, useFilter=True, plotACF=False, noLags='auto'):
     """
@@ -444,15 +456,16 @@ def resid(fitted_model, y, useFilter=True, plotACF=False, noLags='auto'):
         res = scipy.signal.lfilter(fitted_model.polynomial_ar, fitted_model.polynomial_ma, y)
     else:
         res = fitted_model.resid[len(fitted_model.polynomial_ar)-1:]
-    
+
     if plotACF:
-        acf(res,maxOrd=noLags,plotIt=True)
+        acf(res, maxOrd=noLags, plotIt=True)
         plt.title('Residual ACF')
         plt.show()
 
     return res
 
-def box_cox(y, plotIt=True, titleStr=None, lamRange=[-2,2], noVals=100, transform=True):
+
+def box_cox(y, plotIt=True, titleStr=None, lamRange=[-2, 2], noVals=100, transform=True):
     """
     Perform a Box-Cox transformation on a dataset.
 
@@ -501,25 +514,26 @@ def box_cox(y, plotIt=True, titleStr=None, lamRange=[-2,2], noVals=100, transfor
 
     if transform:
         print(f'Max Lambda = {maxLam}.')
-        transforms = {-3: 'y^-3', 
-                      -2: 'y^-2', 
-                      -1: 'y^-1', 
-                      -0.5: 'y^-0.5', 
-                      0: 'ln(y)', 
-                      0.5: 'y^0.5', 
-                      1: 'y', 
-                      2: 'y^2', 
+        transforms = {-3: 'y^-3',
+                      -2: 'y^-2',
+                      -1: 'y^-1',
+                      -0.5: 'y^-0.5',
+                      0: 'ln(y)',
+                      0.5: 'y^0.5',
+                      1: 'y',
+                      2: 'y^2',
                       3: 'y^3'}
         t = min(list(transforms.keys()), key=lambda x: abs(x - maxLam))
-        if t==1:
+        if t == 1:
             print('Transformation is likely not needed.')
         else:
             print(f'{transforms[t]} could be an appropriate transformation.')
-        
+
         return
     return maxLam, offsetValue
 
-def pzmap(b,a, return_val=False):
+
+def pzmap(b, a, return_val=False):
     """Plot the complex z-plane given a transfer function.
     Copyright (c) 2011 Christopher Felton
     https://www.dsprelated.com/showcode/244.php
@@ -531,38 +545,46 @@ def pzmap(b,a, return_val=False):
     ax = plt.subplot(111)
 
     # create the unit circle
-    uc = patches.Circle((0,0), radius=1, fill=False,
-                        color='black', ls='dashed')
+    uc = patches.Circle((0, 0),
+                        radius=1,
+                        fill=False,
+                        color='black',
+                        ls='dashed')
     ax.add_patch(uc)
 
     # The coefficients are less than 1, normalize the coeficients
     if np.max(b) > 1:
         kn = np.max(b)
-        b = b/float(kn)
+        b = b / float(kn)
     else:
         kn = 1
 
     if np.max(a) > 1:
         kd = np.max(a)
-        a = a/float(kd)
+        a = a / float(kd)
     else:
         kd = 1
-        
+
     # Get the poles and zeros
     p = np.roots(a)
     z = np.roots(b)
-    k = kn/float(kd)
-    
-    
-    # Plot the zeros and set marker properties    
+    k = kn / float(kd)
+
+    # Plot the zeros and set marker properties
     t1 = plt.plot(z.real, z.imag, 'go', ms=10)
-    plt.setp( t1, markersize=10.0, markeredgewidth=1.0,
-              markeredgecolor='k', markerfacecolor='g')
+    plt.setp(t1,
+             markersize=10.0,
+             markeredgewidth=1.0,
+             markeredgecolor='k',
+             markerfacecolor='g')
 
     # Plot the poles and set marker properties
     t2 = plt.plot(p.real, p.imag, 'rx', ms=10)
-    plt.setp( t2, markersize=12.0, markeredgewidth=3.0,
-              markeredgecolor='r', markerfacecolor='r')
+    plt.setp(t2,
+             markersize=12.0,
+             markeredgewidth=3.0,
+             markeredgecolor='r',
+             markerfacecolor='r')
 
     ax.spines['left'].set_position('center')
     ax.spines['bottom'].set_position('center')
@@ -570,16 +592,20 @@ def pzmap(b,a, return_val=False):
     ax.spines['top'].set_visible(False)
 
     # set the ticks
-    max_value = max(abs(np.max(p.real)), abs(np.max(p.imag)), abs(np.max(z.real)), abs(np.max(z.imag)))
+    max_value = max(abs(np.max(p.real)), abs(np.max(p.imag)),
+                    abs(np.max(z.real)), abs(np.max(z.imag)))
     r = max_value + 0.5
     plt.axis('scaled')
     plt.axis([-r, r, -r, r])
-    ticks = [-1, -.5, .5, 1]; plt.xticks(ticks); plt.yticks(ticks)
+    ticks = [-1, -.5, .5, 1]
+    plt.xticks(ticks)
+    plt.yticks(ticks)
 
     plt.show()
-    
+
     if return_val:
         return z, p, k
+
 
 def covMvect(y, meanD=None, fb=False):
     """
@@ -589,30 +615,31 @@ def covMvect(y, meanD=None, fb=False):
     estimated. If fb is set, forward-backward averaging is used.
     """
     data = np.atleast_2d(y)
-    m,N = data.shape
+    m, N = data.shape
     if meanD is None:
-        meanD = np.mean(data, axis=1).reshape(-1,1)
+        meanD = np.mean(data, axis=1).reshape(-1, 1)
     else:
-        
-        m1,n1 = meanD.shape
+
+        m1, n1 = meanD.shape
         # Check dimensionality
         if n1 == m and m1 == 1:  # If flipped, transpose to row vector.
             meanD = meanD.T
             m1, n1 = n1, m1
         if m1 != m:
             raise ValueError("Incompatible dimensions for mean vector and data.")
-    
+
     # Compensate for mean value
-    data = data - np.ones((m,N)) * meanD
-    
+    data = data - np.ones((m, N)) * meanD
+
     # Form forward-only covariance matrix
     R = data @ data.T / (N-1)
-    
+
     if fb:
         H = np.fliplr(np.eye(m))  # Exchange matrix
         R = (R + H @ R.T @ H) / 2  # Form forward-backward estimate
-    
+
     return R, meanD
+
 
 def mat2pd(file_path, columns=None):
     """
@@ -632,10 +659,11 @@ def mat2pd(file_path, columns=None):
     array = data[key]
 
     if columns is None:
-        columns = [key] if array.shape[1]==1 else [f'col{n+1}' for n in range(array.shape[1])]
+        columns = [key] if array.shape[1] == 1 else [f'col{n+1}' for n in range(array.shape[1])]
 
     return pd.DataFrame(array, columns=columns)
-    
+
+
 def mat2np(file_path):
     """
     Reads a .mat file and returns a numpy array.
@@ -652,12 +680,13 @@ def mat2np(file_path):
     data = scipy.io.loadmat(file_path)
     key = [key for key in data.keys() if not key.startswith("__")][0]
     array = np.array(data[key])
-    if len(array.shape)>1:
-        if array.shape[0]==1 or array.shape[1]==1:
+    if len(array.shape) > 1:
+        if array.shape[0] == 1 or array.shape[1] == 1:
             array = array.ravel()
 
     return array
-  
+
+
 def mfile2pd(filename):
     """
     Reads a m file by Andreas and returns a pandas dataframe.
@@ -669,11 +698,16 @@ def mfile2pd(filename):
         lines = file.readlines()
 
     # Remove comments and empty lines
-    lines = [line for line in lines if not line.strip().startswith('%') and line.strip()]
+    lines = [
+        line for line in lines
+        if not line.strip().startswith('%') and line.strip()
+    ]
 
     # Extract matrix data by searching between square brackets
     matrix_str = ''.join(lines)
-    matrix_match = re.search(r'\[([\s\S]*?)\]', matrix_str)  # Non-greedy match to capture only the matrix
+    matrix_match = re.search(
+        r'\[([\s\S]*?)\]',
+        matrix_str)  # Non-greedy match to capture only the matrix
     if matrix_match:
         matrix_str = matrix_match.group(1).strip()
     else:
@@ -681,9 +715,12 @@ def mfile2pd(filename):
 
     # Split the matrix string into lines and process each line
     matrix_lines = matrix_str.split("\n")
-    matrix = [list(map(float, row.strip().split())) for row in matrix_lines if row.strip()]
+    matrix = [
+        list(map(float,
+                 row.strip().split())) for row in matrix_lines if row.strip()
+    ]
 
     # Convert to pandas DataFrame
     df = pd.DataFrame(matrix)
-    
+
     return df

@@ -2,11 +2,14 @@ import numpy as np
 import scipy.signal as signal
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
-from TSA.analysis import plotACFnPACF, mat2np
-from TSA.tests import whiteness_test
+
 from filterpy.kalman import KalmanFilter
 from statsmodels.tools.numdiff import approx_hess1, approx_hess2, approx_hess3
 from nfoursid.nfoursid import NFourSID
+
+from TSA.analysis import plotACFnPACF, mat2np
+from TSA.tests import whiteness_test
+
 
 class PEM:
     """
@@ -31,57 +34,77 @@ class PEM:
     - rpem: Recursive Parameter Estimation using a Kalman Filter approach.
     - set_free_params: Set which polynomial coefficients are adjustable.
     """
+
     def __init__(self, y, x=None, A=[1], B=[], C=[1], D=[1], F=[1]):
         self.y = y
 
         # If given as polynomial or if given as model order
-        self.A_guess = np.concatenate(([1],np.zeros(A))) if isinstance(A,int) else np.array(A)
-        self.B_guess = np.concatenate(([1],np.zeros(B))) if isinstance(B,int) else np.array(B)
-        self.C_guess = np.concatenate(([1],np.zeros(C))) if isinstance(C,int) else np.array(C)
-        self.D_guess = np.concatenate(([1],np.zeros(D))) if isinstance(D,int) else np.array(D)
-        self.F_guess = np.concatenate(([1],np.zeros(F))) if isinstance(F,int) else np.array(F)
+        self.A_guess = np.concatenate(
+            ([1], np.zeros(A))) if isinstance(A, int) else np.array(A)
+        self.B_guess = np.concatenate(
+            ([1], np.zeros(B))) if isinstance(B, int) else np.array(B)
+        self.C_guess = np.concatenate(
+            ([1], np.zeros(C))) if isinstance(C, int) else np.array(C)
+        self.D_guess = np.concatenate(
+            ([1], np.zeros(D))) if isinstance(D, int) else np.array(D)
+        self.F_guess = np.concatenate(
+            ([1], np.zeros(F))) if isinstance(F, int) else np.array(F)
 
         # Ensure A and C start with 1
-        assert self.A_guess[0] == 1, "The leading coefficient of the A polynomial must be 1."
-        assert self.C_guess[0] == 1, "The leading coefficient of the C polynomial must be 1."
+        assert self.A_guess[
+            0] == 1, "The leading coefficient of the A polynomial must be 1."
+        assert self.C_guess[
+            0] == 1, "The leading coefficient of the C polynomial must be 1."
 
         if x is None:
-            assert len(self.B_guess) == 0, "B should not be provided if x is not given"
-            assert len(self.F_guess) == 1, "F should not be provided if x is not given"
+            assert len(self.B_guess
+                       ) == 0, "B should not be provided if x is not given"
+            assert len(self.F_guess
+                       ) == 1, "F should not be provided if x is not given"
         else:
             assert len(self.B_guess) > 0, "B should be provided if x is given"
 
+        assert self.D_guess[
+            0] == 1, "The leading coefficient of the D polynomial must be 1."
+        assert self.F_guess[
+            0] == 1, "The leading coefficient of the F polynomial must be 1."
 
-        assert self.D_guess[0] == 1, "The leading coefficient of the D polynomial must be 1."
-        assert self.F_guess[0] == 1, "The leading coefficient of the F polynomial must be 1."
-        
         self.isX = False if x is None else True
         self.x = np.zeros(len(y)) if x is None else x
 
-        assert len(self.y)==len(self.x), "x and y should have the same length."
-        
-        self.nA = len(self.A_guess) # Sizes of polynomials
+        assert len(self.y) == len(
+            self.x), "x and y should have the same length."
+
+        self.nA = len(self.A_guess)  # Sizes of polynomials
         self.nB = len(self.B_guess)
         self.nC = len(self.C_guess)
         self.nD = len(self.D_guess)
         self.nF = len(self.F_guess)
 
-        self.A_free = np.concatenate(([0],np.ones(self.nA-1))).astype(bool) # Set free params (init is all free except first)
-        self.B_free = np.ones(self.nB).astype(bool) # Default is all free for B
-        self.C_free = np.concatenate(([0],np.ones(self.nC-1))).astype(bool)
-        self.D_free = np.concatenate(([0],np.ones(self.nD-1))).astype(bool)
-        self.F_free = np.concatenate(([0],np.ones(self.nF-1))).astype(bool)
+        self.A_free = np.concatenate(([0], np.ones(self.nA - 1))).astype(
+            bool)  # Set free params (init is all free except first)
+        self.B_free = np.ones(self.nB).astype(
+            bool)  # Default is all free for B
+        self.C_free = np.concatenate(([0], np.ones(self.nC - 1))).astype(bool)
+        self.D_free = np.concatenate(([0], np.ones(self.nD - 1))).astype(bool)
+        self.F_free = np.concatenate(([0], np.ones(self.nF - 1))).astype(bool)
 
-        self.nFree = sum([sum(f) for f in [self.A_free,self.B_free,self.C_free,self.D_free,self.F_free]])
+        self.nFree = sum([
+            sum(f) for f in
+            [self.A_free, self.B_free, self.C_free, self.D_free, self.F_free]
+        ])
         # assert self.nFree > 0, "Model has to estimate at least one parameter"
 
-        self.A_est = np.copy(self.A_guess) # Estimated after fitting, init is the same as guess
+        self.A_est = np.copy(
+            self.A_guess)  # Estimated after fitting, init is the same as guess
         self.B_est = np.copy(self.B_guess)
         self.C_est = np.copy(self.C_guess)
         self.D_est = np.copy(self.D_guess)
         self.F_est = np.copy(self.F_guess)
 
-        self.theta_est = self._polys_to_theta(self.A_est, self.B_est, self.C_est, self.D_est, self.F_est)
+        self.theta_est = self._polys_to_theta(self.A_est, self.B_est,
+                                              self.C_est, self.D_est,
+                                              self.F_est)
 
     def fit(self, method='LS', bh=False, bh_iter=100):
         """
@@ -114,23 +137,36 @@ class PEM:
         - Other methods are directly passed to scipy's minimize function and should be valid minimizers.
         """
         # Concatenate params into theta vector of free params
-        theta_init = self._polys_to_theta(self.A_guess, self.B_guess, self.C_guess, self.D_guess, self.F_guess)
+        theta_init = self._polys_to_theta(self.A_guess, self.B_guess,
+                                          self.C_guess, self.D_guess,
+                                          self.F_guess)
 
         # Minimize sum of squares of prediction error
-        if method=='LS':
+        if method == 'LS':
             if bh:
                 result = self._LS_basin_hopping(theta_init, niter=bh_iter)
             else:
-                result = opt.least_squares(lambda theta: self._pred_err(theta), theta_init)
-        else: # Other methods used in scipy.optimize.minimize
+                result = opt.least_squares(lambda theta: self._pred_err(theta),
+                                           theta_init)
+        else:  # Other methods used in scipy.optimize.minimize
             if bh:
-                result = opt.basinhopping(lambda theta: self._sum_of_squares(theta), theta_init, niter=bh_iter, minimizer_kwargs={'method': method}, disp=False, seed=0)
+                result = opt.basinhopping(
+                    lambda theta: self._sum_of_squares(theta),
+                    theta_init,
+                    niter=bh_iter,
+                    minimizer_kwargs={'method': method},
+                    disp=False,
+                    seed=0)
             else:
-                result = opt.minimize(lambda theta: self._sum_of_squares(theta), theta_init, method=method)
+                result = opt.minimize(
+                    lambda theta: self._sum_of_squares(theta),
+                    theta_init,
+                    method=method)
 
-        self.theta_est = result['x'] # Extract theta
+        self.theta_est = result['x']  # Extract theta
 
-        A_params, B_params, C_params, D_params, F_params = self._theta_to_polys(self.theta_est)
+        A_params, B_params, C_params, D_params, F_params = self._theta_to_polys(
+            self.theta_est)
         self.A_est = np.where(self.A_free, A_params, self.A_guess)
         self.B_est = np.where(self.B_free, B_params, self.B_guess)
         self.C_est = np.where(self.C_free, C_params, self.C_guess)
@@ -138,7 +174,10 @@ class PEM:
         self.F_est = np.where(self.F_free, F_params, self.F_guess)
 
         std_errs = self._calc_SE(self.theta_est)
-        poly_std_errs = {'ABCDF'[i]: self._theta_to_polys(std_errs,fill='zeros')[i] for i in range(5)} # SE in polynomial form
+        poly_std_errs = {
+            'ABCDF'[i]: self._theta_to_polys(std_errs, fill='zeros')[i]
+            for i in range(5)
+        }  # SE in polynomial form
 
         # Confidence intervals for theta
         conf_ints = self._conf_ints(std_errs)
@@ -146,43 +185,48 @@ class PEM:
         resid = self._pred_err(self.theta_est)
 
         # Calculate MSE,AIC,BIC,FPE:
-        sigma2 = np.var(resid) # Variance of residuals
+        sigma2 = np.var(resid)  # Variance of residuals
         n = len(resid)
-        logL = self._log_likelihood(self.theta_est) # Log likelihood
+        logL = self._log_likelihood(self.theta_est)  # Log likelihood
         k = self.nFree  # Number of free parameters
         MSE = np.sum(resid**2) / n
-        AIC = -2*logL + 2*k
-        BIC = -2*logL + k*np.log(n)
+        AIC = -2 * logL + 2 * k
+        BIC = -2 * logL + k * np.log(n)
         FPE = ((n + k) / (n - k)) * sigma2
 
         # Calculate NRMSE (normalized rms error) goodness-of-fit
         RMSE = np.sqrt(np.mean(resid**2))
-        NRMSE = RMSE/np.std(self.y)
-        NRMSE_P = (1-NRMSE)*100 # As percentage
+        NRMSE = RMSE / np.std(self.y)
+        NRMSE_P = (1 - NRMSE) * 100  # As percentage
 
         scores = {
             'FPE': FPE,
             'MSE': MSE,
             'AIC': AIC,
             'BIC': BIC,
-            'NRMSE': NRMSE_P
-            }
-        
+            'NRMSE': NRMSE_P,
+        }
+
         # Package polynomials into dictionary
-        polys = {'A': self.A_est,
-                    'B': self.B_est,
-                    'C': self.C_est,
-                    'D': self.D_est,
-                    'F': self.F_est}
-        
-        polys_free = {'A': self.A_free,
-                        'B': self.B_free,
-                        'C': self.C_free,
-                        'D': self.D_free,
-                        'F': self.F_free}
+        polys = {
+            'A': self.A_est,
+            'B': self.B_est,
+            'C': self.C_est,
+            'D': self.D_est,
+            'F': self.F_est,
+        }
 
-        return PEM.PEMResult(self.theta_est, polys, polys_free, std_errs, poly_std_errs, conf_ints, resid, result, scores, self)
+        polys_free = {
+            'A': self.A_free,
+            'B': self.B_free,
+            'C': self.C_free,
+            'D': self.D_free,
+            'F': self.F_free,
+        }
 
+        return PEM.PEMResult(self.theta_est, polys, polys_free, std_errs,
+                             poly_std_errs, conf_ints, resid, result, scores,
+                             self)
 
     def rpem(self, P=None, Q=None, R=None, k_pred=None):
         """
@@ -207,8 +251,8 @@ class PEM:
 
         Note: Models with nontrivial D or F polynomials are not supported.
         """
-        
-        assert self.nD<=1 and self.nF<=1, 'Models with D and F polynomials are not yet supported with rpem.'
+
+        assert self.nD <= 1 and self.nF <= 1, 'Models with D and F polynomials are not yet supported with rpem.'
 
         init_model = self.fit()
         theta_init = init_model.params
@@ -218,43 +262,49 @@ class PEM:
         y = self.y
         u = self.x
 
-        kf.x = theta_init.reshape(-1,1)  # Initial state
+        kf.x = theta_init.reshape(-1, 1)  # Initial state
         kf.F = np.eye(self.nFree)  # State transition matrix
 
         # Are the covariances correctly assumed?
-        if Q is None: kf.Q = np.array([[1e-6,0],[0,1e-6]]) # State noise covariance 
-        elif isinstance(Q, (float, int)): kf.Q = Q*np.eye(self.nFree)
-        else: kf.Q = Q
+        if Q is None:
+            kf.Q = np.array([[1e-6, 0], [0, 1e-6]])  # State noise covariance
+        elif isinstance(Q, (float, int)):
+            kf.Q = Q * np.eye(self.nFree)
+        else:
+            kf.Q = Q
 
-        kf.R = R if R is not None else np.var(init_model.resid)  # Measurement noise covariance
+        kf.R = R if R is not None else np.var(
+            init_model.resid)  # Measurement noise covariance
 
-        if P is None: kf.P = np.diag(init_model.std_errs ** 2) # Initial covariance
-        elif isinstance(P, (float, int)): kf.P = P*np.eye(self.nFree)
-        else: kf.P = P
-
+        if P is None:
+            kf.P = np.diag(init_model.std_errs**2)  # Initial covariance
+        elif isinstance(P, (float, int)):
+            kf.P = P * np.eye(self.nFree)
+        else:
+            kf.P = P
 
         N = len(self.y)
-        start = np.max([self.nA,self.nB,self.nC,self.nD,self.nF])-1
-        
+        start = np.max([self.nA, self.nB, self.nC, self.nD, self.nF]) - 1
+
         Xsave = np.zeros((N, self.nFree, 1))
-        Xsave[0,:] = kf.x
+        Xsave[0, :] = kf.x
         ehat = np.zeros(N)
 
         k_preds = np.atleast_1d(k_pred) if k_pred is not None else []
         end = np.max(k_preds) if len(k_preds) else 0
-        predictions = {k:np.zeros(N) for k in k_preds}
-        variances = np.zeros((N, self.nFree,1))
+        predictions = {k: np.zeros(N) for k in k_preds}
+        variances = np.zeros((N, self.nFree, 1))
 
         # Create H matrix easier, a.k.a Ct matrix
         def createH(t):
-            Ha = np.array([-y[t-n] for n in np.where(self.A_free)[0]])
-            Hb = np.array([u[t-n] for n in np.where(self.B_free)[0]])
-            Hc = np.array([ehat[t-n] for n in np.where(self.C_free)[0]])
-            H = np.concatenate((Ha,Hb,Hc)).reshape(1,-1)
+            Ha = np.array([-y[t - n] for n in np.where(self.A_free)[0]])
+            Hb = np.array([u[t - n] for n in np.where(self.B_free)[0]])
+            Hc = np.array([ehat[t - n] for n in np.where(self.C_free)[0]])
+            H = np.concatenate((Ha, Hb, Hc)).reshape(1, -1)
             return H
 
         # Kalman loop
-        for t in range(start, N-end):
+        for t in range(start, N - end):
             kf.H = createH(t)
             kf.predict()
             kf.update(y[t])
@@ -264,17 +314,25 @@ class PEM:
             # Predictions
             if len(k_preds):
                 for k in k_preds:
-                    H_pred = createH(t+k)
-                    predictions[k][t+k] = np.ravel(H_pred @ kf.x)
-            
-            variances[t] = np.diag(kf.P).reshape(-1,1)
+                    H_pred = createH(t + k)
+                    predictions[k][t + k] = np.ravel(H_pred @ kf.x)
+
+            variances[t] = np.diag(kf.P).reshape(-1, 1)
             Xsave[t] = kf.x
 
-        return {'x': Xsave, 'ehat': ehat, 'vars': variances, 'ypred': predictions}
+        return {
+            'x': Xsave,
+            'ehat': ehat,
+            'vars': variances,
+            'ypred': predictions
+        }
 
-
-
-    def set_free_params(self, A_free=None, B_free=None, C_free=None, D_free=None, F_free=None):
+    def set_free_params(self,
+                        A_free=None,
+                        B_free=None,
+                        C_free=None,
+                        D_free=None,
+                        F_free=None):
         """
         Sets which polynomial coefficients are adjustable during model fitting.
 
@@ -293,12 +351,17 @@ class PEM:
         if C_free is None: C_free = self.C_free
         if D_free is None: D_free = self.D_free
         if F_free is None: F_free = self.F_free
-        
-        if len(A_free) != len(self.A_guess): raise ValueError(f"A_free should have length {len(self.A_guess)}")
-        if len(B_free) != len(self.B_guess): raise ValueError(f"B_free should have length {len(self.B_guess)}")
-        if len(C_free) != len(self.C_guess): raise ValueError(f"C_free should have length {len(self.C_guess)}")
-        if len(D_free) != len(self.D_guess): raise ValueError(f"D_free should have length {len(self.D_guess)}")
-        if len(F_free) != len(self.F_guess): raise ValueError(f"F_free should have length {len(self.F_guess)}")
+
+        if len(A_free) != len(self.A_guess):
+            raise ValueError(f"A_free should have length {len(self.A_guess)}")
+        if len(B_free) != len(self.B_guess):
+            raise ValueError(f"B_free should have length {len(self.B_guess)}")
+        if len(C_free) != len(self.C_guess):
+            raise ValueError(f"C_free should have length {len(self.C_guess)}")
+        if len(D_free) != len(self.D_guess):
+            raise ValueError(f"D_free should have length {len(self.D_guess)}")
+        if len(F_free) != len(self.F_guess):
+            raise ValueError(f"F_free should have length {len(self.F_guess)}")
 
         self.A_free = np.array(A_free).astype(bool)
         self.B_free = np.array(B_free).astype(bool)
@@ -306,23 +369,28 @@ class PEM:
         self.D_free = np.array(D_free).astype(bool)
         self.F_free = np.array(F_free).astype(bool)
 
-        self.A_free[0] = False # Make sure the first param is 1 for ACDF
+        self.A_free[0] = False  # Make sure the first param is 1 for ACDF
         self.C_free[0] = False
         self.D_free[0] = False
         self.F_free[0] = False
 
-        self.nFree = np.sum([np.sum(f) for f in [self.A_free,self.B_free,self.C_free,self.D_free,self.F_free]])
-        self.theta_est = self._polys_to_theta(self.A_est, self.B_est, self.C_est, self.D_est, self.F_est)
+        self.nFree = np.sum([
+            np.sum(f) for f in
+            [self.A_free, self.B_free, self.C_free, self.D_free, self.F_free]
+        ])
+        self.theta_est = self._polys_to_theta(self.A_est, self.B_est,
+                                              self.C_est, self.D_est,
+                                              self.F_est)
 
     def _samps_to_remove(self):
-        return self.nA+self.nD+self.nF-3
+        return self.nA + self.nD + self.nF - 3
 
     def _pred_err(self, theta, y=None, x=None):
-        A,B,C,D,F = self._theta_to_polys(theta)
+        A, B, C, D, F = self._theta_to_polys(theta)
 
         if len(B) == 0:
             B = np.array([0])
-        
+
         if y is None:
             y = self.y
 
@@ -331,32 +399,29 @@ class PEM:
 
         # A*y = [B/F]*x + [C/D]*e
         # => e = [A*D/C]*y - [B*D/F*C]*x
-        AxD = np.convolve(A,D)
-        BxD = np.convolve(B,D)
-        FxC = np.convolve(F,C)
-        e = filter(AxD,C,y) - filter(BxD,FxC,x)
+        AxD = np.convolve(A, D)
+        BxD = np.convolve(B, D)
+        FxC = np.convolve(F, C)
+        e = filter(AxD, C, y) - filter(BxD, FxC, x)
 
         # rmv = self._samps_to_remove()
         # e = e[rmv:]
         return e
-            
 
     def _sum_of_squares(self, theta):
         e = self._pred_err(theta)
         return np.sum(e**2)
 
-
     def _log_likelihood(self, theta):
         e = self._pred_err(theta)
         # Variance of residuals
-        sigma2 = np.var(e, ddof=len(self.theta_est))
+        # sigma2 = np.var(e, ddof=len(self.theta_est))
         N = len(e)
         EtE = e.T @ e
         # Log likelihood function
         # logL = -0.5 * n * np.log(2 * np.pi * sigma2) - (1 / (2 * sigma2)) * np.sum(e**2)
-        logL = -N/2 * np.log(EtE/N) - N/2*1*np.log(2*np.pi) - N/2
+        logL = -N / 2 * np.log(EtE / N) - N / 2 * 1 * np.log(2 * np.pi) - N / 2
         return logL
-
 
     def _calc_SE(self, theta):
         """
@@ -375,14 +440,14 @@ class PEM:
         # # Calculate standard errors
         # SE = np.sqrt(np.diag(inv_hess))
 
-
         # --Method 2-- Current method, a bit more consistent than method 1
-        J = opt.approx_fprime(theta, lambda theta: self._pred_err(theta)) # Jacobian
+        J = opt.approx_fprime(theta,
+                              lambda theta: self._pred_err(theta))  # Jacobian
         Jt = np.matrix.transpose(J)
-        cov = np.linalg.inv(Jt@J)
+        cov = np.linalg.inv(Jt @ J)
         # cov = [[1.2104e-04]]
         var_e = (np.var(self._pred_err(theta)))
-        SE = np.sqrt(var_e*np.diag(cov))
+        SE = np.sqrt(var_e * np.diag(cov))
 
         # --Method 3-- matlab method
         # r1 = self._matlab_cov_m(theta, inputpoly=False)['J']
@@ -400,40 +465,40 @@ class PEM:
         Attempt to translate the function gntrad in getErrorAndJacobian.m.
         If someone asks me to explain this tell my family i love them
         """
-        def n4sid_simple(y, n): 
+
+        def n4sid_simple(y, n):
             """
             WRONG. This function has to replicate the behaviour of n4sid in matlab, returning the
             correct A,C,K matrices and prediction error e.
             """
             # Step 1: Data Matrix Construction
             L = (y.shape[1] - 1) // 2
-            Yf = np.vstack([y[:, i:i+L] for i in range(L)])
-            Yp = np.vstack([y[:, i:i+L] for i in range(1, L+1)])
-            
+            Yf = np.vstack([y[:, i:i + L] for i in range(L)])
+            # Yp = np.vstack([y[:, i:i + L] for i in range(1, L + 1)])
+
             # Step 2: Singular Value Decomposition (SVD)
             U, S, Vh = np.linalg.svd(Yf, full_matrices=False)
             U = U[:, :n]
             S = np.diag(S[:n])
-            V = Vh.T[:, :n]
-            
+            # V = Vh.T[:, :n]
+
             # Observability matrix
             Ob = U @ np.sqrt(S)
-            
+
             # Step 3: System Matrix Estimation
             A = np.linalg.pinv(Ob[:-1, :]) @ Ob[1:, :]
             C = Ob[0, :].reshape(1, -1)
-            
+
             # Estimate K using A, C and the data
             X = np.linalg.pinv(Ob) @ Yf
             X_next = A @ X[:, :-1] + C.T @ y[:, 1:L]
             X_cur = X[:, 1:]
             e = X_next - X_cur
-            K = e @ np.linalg.pinv(y[:, L:L+1] - C @ X_cur)
-            
-            return A, C, K, e
-        
+            K = e @ np.linalg.pinv(y[:, L:L + 1] - C @ X_cur)
 
-        A,B,C,D,F = self._theta_to_polys(theta)
+            return A, C, K, e
+
+        A, B, C, D, F = self._theta_to_polys(theta)
         size = len(self.y)
         nparams = len(theta)
         nA = np.sum(self.A_free)
@@ -443,73 +508,75 @@ class PEM:
         nF = np.sum(self.F_free)
         nk = np.nonzero(B)[0][0]
 
-        v = filter(A,1,self.y)
-        w = filter(B,F,self.x)
-        v = v-w
-        e = filter(D,C,v)
+        v = filter(A, 1, self.y)
+        w = filter(B, F, self.x)
+        v = v - w
+        e = filter(D, C, v)
 
-        if nA: yf = filter(-D,C,self.y)
-        if nC: ef = filter(1,C,e)
-        if nD: vf = filter(-1,C,v)
+        if nA: yf = filter(-D, C, self.y)
+        if nC: ef = filter(1, C, e)
+        if nD: vf = filter(-1, C, v)
 
-        gg = np.convolve(C,F)
-        uf = filter(D,gg,self.x)
-        wf = filter(-D,gg,w)
+        gg = np.convolve(C, F)
+        uf = filter(D, gg, self.x)
+        wf = filter(-D, gg, w)
 
         # Compute the gradient PSI
-        jj = np.arange(nparams-1,size)
+        jj = np.arange(nparams - 1, size)
         psi = np.zeros((len(jj), nparams))
         for a in range(nA):
-            psi[:,a] = yf[jj-a-1]
+            psi[:, a] = yf[jj - a - 1]
 
         ss = nA
-        ss1 = nA+nB+nC+nD
+        ss1 = nA + nB + nC + nD
         for b in range(nB):
             I = jj > (b + nk - 1)
-            psi[I,ss+b] = uf[jj[I] - b - nk]
+            psi[I, ss + b] = uf[jj[I] - b - nk]
 
         for f in range(nF):
-            psi[:,ss1+f] = wf[jj-f-1]
+            psi[:, ss1 + f] = wf[jj - f - 1]
 
-        ss = ss+nB
-        ss1 = ss1+nF
+        ss = ss + nB
+        ss1 = ss1 + nF
 
         for c in range(nC):
-            psi[:,ss+c] = ef[jj-c-1]
-        ss = ss+nC
+            psi[:, ss + c] = ef[jj - c - 1]
+        ss = ss + nC
         for d in range(nD):
-            psi[:,ss+c] = vf[jj-d-1]
+            psi[:, ss + c] = vf[jj - d - 1]
 
-        if inputpoly: # Only goes into this if there is either a B or F polynomial or both
-            a,c,k,res = n4sid_simple(e.reshape(1,-1),5)
-            
+        if inputpoly:  # Only goes into this if there is either a B or F polynomial or both
+            a, c, k, res = n4sid_simple(e.reshape(1, -1), 5)
+
             L = np.linalg.cholesky(np.atleast_2d(np.var(res)))
-            num, den = signal.ss2tf(a,k*L,c,L)
-            psi = filter(num.ravel(),den.ravel(), psi[::-1, :], axis=0)
+            num, den = signal.ss2tf(a, k * L, c, L)
+            psi = filter(num.ravel(), den.ravel(), psi[::-1, :], axis=0)
 
-        R1 = np.triu(np.linalg.qr(np.hstack([psi, e[jj][:, np.newaxis]]), mode='complete')[1])
+        R1 = np.triu(
+            np.linalg.qr(np.hstack([psi, e[jj][:, np.newaxis]]),
+                         mode='complete')[1])
         nRr, nRc = R1.shape
         R1 = R1[:min(nRr, nRc), :]
 
         # R = R1[:nparams, :nparams]
         # Re = R1[:nparams, nparams]
 
-        R = R1[0:min(nparams+1, R1.shape[0]), 0:nparams]
-        Re = R1[0:min(nparams+1, R1.shape[0]), nparams][:, np.newaxis] # note the sign difference
+        R = R1[0:min(nparams + 1, R1.shape[0]), 0:nparams]
+        Re = R1[0:min(nparams + 1, R1.shape[0]),
+                nparams][:, np.newaxis]  # note the sign difference
 
-        J = R[0:nparams,:]
+        J = R[0:nparams, :]
 
         return {'EtE': e**2, 'Re': Re, 'R': R, 'J': J}
-    
 
     def _conf_ints(self, errs):
         # Calculate confidence intervals
         CI_lower = self.theta_est - 1.96 * errs
         CI_upper = self.theta_est + 1.96 * errs
-        
-        CI_pairs = [[l, u] for l, u in zip(CI_lower, CI_upper)]
+
+        CI_pairs = [[L, u] for L, u in zip(CI_lower, CI_upper)]
         return CI_pairs
-    
+
     def _polys_to_theta(self, A, B, C, D, F):
         A_used = A[self.A_free]
         B_used = B[self.B_free]
@@ -528,14 +595,16 @@ class PEM:
 
         # Extract values from theta
         A_used = theta[:nA_used]
-        B_used = theta[nA_used:nA_used+nB_used]
-        C_used = theta[nA_used+nB_used:nA_used+nB_used+nC_used]
-        D_used = theta[nA_used+nB_used+nC_used:nA_used+nB_used+nC_used+nD_used]
-        F_used = theta[nA_used+nB_used+nC_used+nD_used:]
+        B_used = theta[nA_used:nA_used + nB_used]
+        C_used = theta[nA_used + nB_used:nA_used + nB_used + nC_used]
+        D_used = theta[nA_used + nB_used + nC_used:nA_used + nB_used +
+                       nC_used + nD_used]
+        F_used = theta[nA_used + nB_used + nC_used + nD_used:]
 
         if fill == 'guess':
             # Initialize full arrays with guess
-            A_full = np.copy(self.A_guess).astype('float64') # Can't converge if i don't set the type???
+            A_full = np.copy(self.A_guess).astype(
+                'float64')  # Can't converge if i don't set the type???
             B_full = np.copy(self.B_guess).astype('float64')
             C_full = np.copy(self.C_guess).astype('float64')
             D_full = np.copy(self.D_guess).astype('float64')
@@ -546,7 +615,7 @@ class PEM:
             B_full = np.zeros(self.nB)
             C_full = np.zeros(self.nC)
             D_full = np.zeros(self.nD)
-            F_full = np.zeros(self.nF)            
+            F_full = np.zeros(self.nF)
 
         # Insert the extracted values into the full arrays
         A_full[self.A_free] = A_used
@@ -557,28 +626,29 @@ class PEM:
 
         return A_full, B_full, C_full, D_full, F_full
 
-    def _LS_basin_hopping(self, theta_init, niter=100, step_size=0.03):
+    def _LS_basin_hopping(self, theta_init, niter=100, step_size=0.03) -> dict[str, float]: # example type annotation of output
         """Method doesn't work that well"""
         best_theta = theta_init.copy()
         best_cost = np.inf
-        
+
         current_theta = theta_init
 
         for _ in range(niter):
             # Local minimization
-            result = opt.least_squares(lambda theta: self._pred_err(theta), current_theta)
+            result = opt.least_squares(lambda theta: self._pred_err(theta),
+                                       current_theta)
             current_cost = result['cost']
-            
+
             # Update best_theta and best_cost
             if current_cost < best_cost:
                 best_cost = current_cost
                 best_theta = result['x']
 
             # Perturb current_theta for next iteration
-            current_theta = result['x'] + step_size * np.random.randn(*theta_init.shape)
+            current_theta = result['x'] + step_size * np.random.randn(
+                *theta_init.shape)
 
         return {'x': best_theta, 'cost': best_cost}
-
 
     class PEMResult:
         """
@@ -604,19 +674,21 @@ class PEM:
         - plot: Plots the negative log-likelihood function against the model parameters.
             For one parameter, a 2D plot is generated, and for two parameters, a 3D surface plot is produced.
         """
-        def __init__(self, theta, polys, polys_free, std_errs, poly_std_errs, conf_ints, resid, optimize_res, scores, model):
+
+        def __init__(self, theta, polys, polys_free, std_errs, poly_std_errs,
+                     conf_ints, resid, optimize_res, scores, model):
             self.polys = polys
             self.A = polys['A']
             self.B = polys['B']
             self.C = polys['C']
             self.D = polys['D']
             self.F = polys['F']
-            self.params = theta # All estimated parameters in theta array
-            self.std_errs = std_errs # Standard errors
+            self.params = theta  # All estimated parameters in theta array
+            self.std_errs = std_errs  # Standard errors
             self.poly_std_errs = poly_std_errs
-            self.conf_ints = conf_ints # Confidence intervals
-            self.polys_free = polys_free # Free parameters
-            self.resid = resid # Residual of model
+            self.conf_ints = conf_ints  # Confidence intervals
+            self.polys_free = polys_free  # Free parameters
+            self.resid = resid  # Residual of model
             self.optimize_res = optimize_res
             self.scores = scores
             self.MSE = scores['MSE']
@@ -629,7 +701,6 @@ class PEM:
         def __str__(self) -> str:
             """Returns a string representation of the PEM result, essentially a summary."""
             return self.summary(return_val=True)
-
 
         def predict(self, k=1):
             """
@@ -646,7 +717,7 @@ class PEM:
 
             yhat = predict_pem(self, y, x, k)
             return yhat
-        
+
         def forecast(self, n=3):
             """
             Computes a forecast of the n next future values.
@@ -659,10 +730,9 @@ class PEM:
             """
             forecasts = np.zeros(n)
             for t in range(n):
-                forecasts[t] = self.predict(k=t+1)[-1]
-            
-            return forecasts
+                forecasts[t] = self.predict(k=t + 1)[-1]
 
+            return forecasts
 
         def summary(self, return_val=False):
             # Model strings
@@ -673,10 +743,12 @@ class PEM:
                 'AB': "ARX",
                 'CB': "MAX",
                 'ABC': "ARMAX",
-                'ABCDF': "Polynomial"}
+                'ABCDF': "Polynomial",
+            }
 
             # Active parameters
-            active_keys = ''.join(p for p, free in self.polys_free.items() if sum(free))
+            active_keys = ''.join(p for p, free in self.polys_free.items()
+                                  if sum(free))
             if active_keys in models:
                 model_name = models[active_keys]
             else:
@@ -705,23 +777,33 @@ class PEM:
             if 'C' not in active_keys and 'D' not in active_keys:
                 equation.append("e(t)")
 
-            model_string += ' + '.join(equation).replace('=  +','=')
+            model_string += ' + '.join(equation).replace('=  +', '=')
 
-            poly_strings = [f'{p}(z) = {self._poly_to_string(self.polys[p],self.poly_std_errs[p])}'  for p in active_keys]
+            poly_strings = [
+                f'{p}(z) = {self._poly_to_string(self.polys[p],self.poly_std_errs[p])}'
+                for p in active_keys
+            ]
 
             orders = [f'n{k} = {len(self.polys[k])-1}' for k in active_keys]
             free_coeffs = sum(sum(v) for v in self.polys_free.values())
-            order_string = 'Polynomial orders: ' + '    '.join(orders) + '\n' + f'Number of free coefficients: {free_coeffs}'
+            order_string = 'Polynomial orders: ' + '    '.join(
+                orders) + '\n' + f'Number of free coefficients: {free_coeffs}'
 
-            est_fit = f'Fit to estimation data (NRMSE): {np.round(self.NRMSE,2)}%'              
-            scores = [f'{name} : {np.round(score,3)}' for name,score in self.scores.items()][:-1]
-            scores_string = est_fit + '\n' + '  '.join(scores[:2]) + '\n' + '   '.join(scores[2:])
+            est_fit = f'Fit to estimation data (NRMSE): {np.round(self.NRMSE,2)}%'
+            scores = [
+                f'{name} : {np.round(score,3)}'
+                for name, score in self.scores.items()
+            ][:-1]
+            scores_string = est_fit + '\n' + '  '.join(
+                scores[:2]) + '\n' + '   '.join(scores[2:])
 
-            summary = model_string + '\n'+'\n' + '\n'.join(poly_strings) + '\n'+'\n'+ order_string + '\n' + scores_string +'\n'
+            summary = model_string + '\n' + '\n' + '\n'.join(
+                poly_strings
+            ) + '\n' + '\n' + order_string + '\n' + scores_string + '\n'
 
             if return_val:
                 return summary
-            
+
             print(summary)
 
         def plotll(self, free_params=None, n_pts=100, lims=None):
@@ -744,18 +826,23 @@ class PEM:
                 free_params = np.ones(len(self.params)).astype(bool)
             else:
                 free_params = np.array(free_params).astype(bool)
-            
-            assert np.sum(free_params) in [1,2] , 'Dimensionality too high, set theta_free to have one or two free params.'
+
+            assert np.sum(free_params) in [
+                1, 2
+            ], 'Dimensionality too high, set theta_free to have one or two free params.'
 
             def replace_theta(theta_new_values):
                 # Replace free parameters in theta_est with new values
                 theta_temp = np.copy(self.params).astype(float)
                 theta_temp[free_params] = theta_new_values
                 return theta_temp
-            
-            if np.sum(free_params)==1:
-                theta_range = np.linspace(lims[0],lims[1],n_pts)
-                thetas = [-self.PEMmodel._log_likelihood(replace_theta(theta)) for theta in theta_range]
+
+            if np.sum(free_params) == 1:
+                theta_range = np.linspace(lims[0], lims[1], n_pts)
+                thetas = [
+                    -self.PEMmodel._log_likelihood(replace_theta(theta))
+                    for theta in theta_range
+                ]
                 plt.plot(theta_range, thetas)
                 plt.xlabel('Theta')
                 plt.ylabel('Negative Log-Likelihood')
@@ -770,7 +857,8 @@ class PEM:
             for i in range(Theta1.shape[0]):
                 for j in range(Theta1.shape[1]):
                     theta_new_values = np.array([Theta1[i, j], Theta2[i, j]])
-                    ll_values[i, j] = -self.PEMmodel._log_likelihood(replace_theta(theta_new_values))
+                    ll_values[i, j] = -self.PEMmodel._log_likelihood(
+                        replace_theta(theta_new_values))
 
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
@@ -791,12 +879,22 @@ class PEM:
 
             # Map for converting numbers to their superscript equivalents
             superscript_map = {
-                '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'
+                '0': '⁰',
+                '1': '¹',
+                '2': '²',
+                '3': '³',
+                '4': '⁴',
+                '5': '⁵',
+                '6': '⁶',
+                '7': '⁷',
+                '8': '⁸',
+                '9': '⁹'
             }
 
             def to_superscript(num):
                 # Convert a number into its superscript representation
-                return '⁻' + ''.join([superscript_map[char] for char in str(num)])
+                return '⁻' + ''.join(
+                    [superscript_map[char] for char in str(num)])
 
             # Constant term
             if p[0] != 0:
@@ -809,17 +907,19 @@ class PEM:
             for i, (coef, err) in enumerate(zip(p[1:], errs[1:]), 1):
                 if coef == 0:
                     continue
-                    
+
                 term_str = ""
                 if err != 0:
                     term_str = f'{coef}(±{np.round(err,4)})'
                 else:
                     term_str = f'{coef}'
-                    
+
                 if coef == 1:
-                    term_str = term_str[:-1]  # remove the 1 from the coefficient representation
+                    term_str = term_str[:
+                                        -1]  # remove the 1 from the coefficient representation
                 elif coef == -1:
-                    term_str = term_str[:-1]  # remove the 1 from the coefficient representation, keep minus sign
+                    term_str = term_str[:
+                                        -1]  # remove the 1 from the coefficient representation, keep minus sign
 
                 term_str += '·z' + to_superscript(i)
 
@@ -829,7 +929,7 @@ class PEM:
 
 
 
-def filter(B,A,X,remove=False, axis=-1):
+def filter(B, A, X, remove=False, axis=-1):
     """
     Applies a filter on the form Y = B/A * X.
 
@@ -845,33 +945,33 @@ def filter(B,A,X,remove=False, axis=-1):
     Returns:
     - ndarray: Filtered data.
     """
-    if isinstance(B, int): B = [B] # If integers are given
+    if isinstance(B, int): B = [B]  # If integers are given
     if isinstance(A, int): A = [A]
-    if len(B)==0: B = [0]
-    if len(A)==0: A = [1]
+    if len(B) == 0: B = [0]
+    if len(A) == 0: A = [1]
     B = np.array(B, dtype='float64')
     A = np.array(A, dtype='float64')
     X = np.array(X, dtype='float64')
 
-    Y = signal.lfilter(B,A,X, axis=axis)
+    Y = signal.lfilter(B, A, X, axis=axis)
 
     if remove:
-        if type(remove)==int: 
+        if isinstance(remove, int):
             Y = Y[remove:]
-        elif type(remove)==bool:
-            Y = Y[len(B)-1:]
+        elif isinstance(remove, bool):
+            Y = Y[len(B) - 1:]
     return Y
 
 
 def seasonal(y, season: int, remove=True):
     "Seasonally differentiates the process y to form ∇ₛy where s is the season."
-    if season<1: raise ValueError('Season should be at least 1')
+    if season < 1: raise ValueError('Season should be at least 1')
     p = np.concatenate(([1], np.zeros(season-1), [-1]))
-    return filter(p,1,y, remove=remove)
+    return filter(p, 1, y, remove=remove)
 
 
-def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_free=None, A1_free=None,
-               titleStr='',noLags='auto', method='LS', bh=False):
+def estimateBJ(y, x, B=[], d=0, A2=[1], C1=[1], A1=[1], B_free=None, A2_free=None, C1_free=None, A1_free=None,
+               titleStr='', noLags='auto', method='LS', bh=False):
     """Estimates the Box-Jenkins model y(t) = [B(z)*z^-d / A2(z)] x(t) + [C1(z)/A1(z)] e(t) using PEM"""
 
     B_new = np.concatenate((np.zeros(d), B)) if not isinstance(B, int) else np.concatenate((np.zeros(d), np.ones(B)))
@@ -881,7 +981,7 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_
         B_free = np.concatenate((np.zeros(d), np.ones(B)))
     else:
         if B_free is None:
-            B_free = np.concatenate((np.zeros(d), np.ones(len(B)))) 
+            B_free = np.concatenate((np.zeros(d), np.ones(len(B))))
         else:
             B_free = np.concatenate((np.zeros(d), B_free))
 
@@ -889,11 +989,12 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_
     model_fitted = model.fit(method=method, bh=bh)
     res = model_fitted.resid
     model_fitted.summary()
-    plotACFnPACF(res,noLags=noLags,titleStr=titleStr)
+    plotACFnPACF(res, noLags=noLags, titleStr=titleStr)
     whiteness_test(res)
 
     return model_fitted
-    
+
+
 def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='auto', method='LS', bh=False):
     """Estimates the ARMA model A(z)y(t) = C(z)e(t) using PEM"""
     ordA = A if isinstance(A, int) else len(A)-1
@@ -901,7 +1002,7 @@ def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='aut
     if ordA == 0 and ordC == 0:
         plotACFnPACF(y, titleStr=titleStr, noLags='auto', includeZeroLag=False)
         return
-    
+
     if not isinstance(A, int): A_free = np.array(A).astype(bool)
     if not isinstance(C, int): C_free = np.array(C).astype(bool)
     model = PEM(y, A=ordA, C=ordC)
@@ -909,7 +1010,7 @@ def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='aut
     model_fitted = model.fit(method=method, bh=bh)
     res = model_fitted.resid
     model_fitted.summary()
-    plotACFnPACF(res,noLags=noLags,titleStr=titleStr, includeZeroLag=False)
+    plotACFnPACF(res, noLags=noLags, titleStr=titleStr, includeZeroLag=False)
     whiteness_test(res)
 
     return model_fitted
@@ -936,7 +1037,7 @@ def simulateARMA(AR=[1], MA=[1], size=500):
     if isinstance(AR, int):
         AR = generate_stable_coefficients(AR)
         coefficients['A'] = AR
-    
+
     # If MA is an integer, generate stable MA coefficients
     if isinstance(MA, int):
         MA = generate_stable_coefficients(MA)
@@ -949,17 +1050,19 @@ def simulateARMA(AR=[1], MA=[1], size=500):
     else:
         return y
 
+
 def generate_stable_coefficients(order):
     """Generate stable coefficients for AR or MA."""
     while True:
         # Generate random coefficients
-        coefficients = np.concatenate(([1],[np.round(np.random.uniform(-1, 1),2) for _ in range(order)]))
-        
+        coefficients = np.concatenate(([1], [np.round(np.random.uniform(-1, 1), 2) for _ in range(order)]))
+
         # If coefficients are stable, return them
         roots = np.roots(coefficients[::-1])
         is_stable = all(abs(root) > 1.0 for root in roots)
         if is_stable:
             return coefficients
+
 
 def simulate_model(x=None, A=[1], B=[0], C=[1], D=[1], F=[1], size=500, e_var=1):
     """
@@ -969,15 +1072,15 @@ def simulate_model(x=None, A=[1], B=[0], C=[1], D=[1], F=[1], size=500, e_var=1)
         x = np.zeros(size)
     else:
         size = len(x)
-    
+
     # if not len(A): A = [1]
     # if not len(B): B = [0]
     # if not len(C): C = [1]
     # if not len(D): D = [1]
     # if not len(F): F = [1]
-    
+
     e = np.sqrt(e_var)*np.random.normal(size=size+100)
-    y = filter(B,np.convolve(A,F),x) + filter(C,np.convolve(A,D), e)[100:]
+    y = filter(B, np.convolve(A, F), x) + filter(C, np.convolve(A, D), e)[100:]
     return y
 
 
@@ -997,33 +1100,35 @@ def set_order(indices):
     result[indices] = 1
     return result
 
+
 def equal_length(*args):
     lengths = [len(arg) for arg in args]
     max_length = max(lengths)
-    
+
     out_args = []
     for arg in args:
         out = [0] * max_length
         out[:len(arg)] = arg
         out_args.append(out)
-    
+
     return tuple(out_args)
+
 
 def polydiv(C, A, k):
     """
     Computes the polynomial division C(z) = A(z)*F(z) + z^{-k}*G(z).
     """
-    C,A = equal_length(C,A)
-    v = np.concatenate(([1],np.zeros(k-1)))
-    F,G = signal.deconvolve(np.convolve(v,C),A)
-    return F,G
+    C, A = equal_length(C, A)
+    v = np.concatenate(([1], np.zeros(k-1)))
+    F, G = signal.deconvolve(np.convolve(v, C), A)
+    return F, G
 
 
 def recursiveAR(data, order, forgetting_factor=1.0, init_var=1000, theta_guess=None):
     """
     Estimates AR parameters of data using the Recursive Least Squares method.
     """
-    
+
     N = len(data)
     R = np.eye(order) * init_var # Large initial covariance matrix due to uncertainty of guess
     theta = np.zeros(order).reshape(-1, 1) if theta_guess is None else np.array(theta_guess)  # Initial parameters are 0s
@@ -1099,21 +1204,21 @@ def predict_pem(PEMResult, y, x=None, k=1, remove=True):
     if r.model.isX: # ARMAX
         # A*y = [B/F]*x + [C/D]*e
         # => A*F*D*y = B*D*x + C*F*e
-        K_A = np.convolve(np.convolve(r.A,r.F),r.D)
-        K_B = np.convolve(r.B,r.D)
-        K_C = np.convolve(r.C,r.F)
+        K_A = np.convolve(np.convolve(r.A, r.F), r.D)
+        K_B = np.convolve(r.B, r.D)
+        K_C = np.convolve(r.C, r.F)
         # K_A*y = K_B*x + K_C*e
 
         F_k, G_k = polydiv(K_C, K_A, k)
-        F_khat, G_khat = polydiv(np.convolve(K_B,F_k),K_C,k)
-        y_hat = filter(F_khat,1,x) + filter(G_khat,K_C,x) + filter(G_k,K_C,y)
-        nr = np.max([len(F_khat),len(G_khat),len(G_k)])
-        
+        F_khat, G_khat = polydiv(np.convolve(K_B, F_k), K_C, k)
+        y_hat = filter(F_khat, 1, x) + filter(G_khat, K_C, x) + filter(G_k, K_C, y)
+        nr = np.max([len(F_khat), len(G_khat), len(G_k)])
+
     else: # ARMA
         # A*y = [C/D]*e
         # => A*D*y = C*e
-        F_k, G_k = polydiv(r.C,np.convolve(r.A,r.D),k)
-        y_hat = filter(G_k,r.C,y)
+        F_k, G_k = polydiv(r.C, np.convolve(r.A, r.D), k)
+        y_hat = filter(G_k, r.C, y)
         nr = len(G_k)
 
     # print('Remember to remove corrupt samples!')
@@ -1133,39 +1238,44 @@ def prediction_residual(PEMResult, y, x=None, k=1):
     Returns:
     - np.ndarray: Residuals from the prediction (actual - predicted values).
     """
-    yhat = predict_pem(PEMResult,y,x,k,remove=True)
+    yhat = predict_pem(PEMResult, y, x, k, remove=True)
     res = y[-len(yhat):] - yhat
     return res
 
 
 
-def show_model(model): 
+def show_model(model):
     """
     *REPLACED BY PEM summary*
     Constructs and prints the AR and MA polynomials of a ARMA model along with confidence intervals.
     Assumes the model object follows statsmodels SARIMAX/ARIMA/ARMA model structures.
     """
-    ar = model.arparams 
+    ar = model.arparams
     ma = model.maparams
 
     arpol = model.polynomial_ar
-    mapol = model.polynomial_ma 
+    mapol = model.polynomial_ma
 
     confs = model.conf_int()
-    confs_ar = -1*confs[1:len(ar)+1]
-    confs_ma = confs[::-1][1:len(ma)+1] 
+    confs_ar = -1 * confs[1:len(ar) + 1]
+    confs_ma = confs[::-1][1:len(ma) + 1]
 
     ar_pairs = list(zip(arpol, [(0, 0)] + confs_ar.tolist()))
-    ma_pairs = list(zip(mapol, [(0, 0)] * (len(mapol) - len(ma)) + confs_ma.tolist()))
+    ma_pairs = list(
+        zip(mapol, [(0, 0)] * (len(mapol) - len(ma)) + confs_ma.tolist()))
 
     ar_string = ' + '.join(
-        f'{round(coef, 3)}' + (f' (± {round(abs((c[1] - c[0]) / 2), 3)})' if i > 0 else '') + f'z^-{i}'
-        for i, (coef, c) in enumerate(ar_pairs) if coef != 0).replace('z^-0', '')
+        f'{round(coef, 3)}' +
+        (f' (± {round(abs((c[1] - c[0]) / 2), 3)})' if i > 0 else '') +
+        f'z^-{i}' for i, (coef, c) in enumerate(ar_pairs)
+        if coef != 0).replace('z^-0', '')
 
     ma_string = ' + '.join(
-        f'{round(coef, 3)}' + (f' (± {round(abs((c[1] - c[0]) / 2), 3)})' if i > 0 else '') + f'z^-{i}'
-        for i, (coef, c) in enumerate(ma_pairs) if coef != 0).replace('z^-0', '')
+        f'{round(coef, 3)}' +
+        (f' (± {round(abs((c[1] - c[0]) / 2), 3)})' if i > 0 else '') +
+        f'z^-{i}' for i, (coef, c) in enumerate(ma_pairs)
+        if coef != 0).replace('z^-0', '')
 
     print('Discrete-time ARMA model: A(z)y(t) = C(z)e(t)')
-    print('A(z) = ',ar_string)
-    print('C(z) = ',ma_string)
+    print('A(z) = ', ar_string)
+    print('C(z) = ', ma_string)
