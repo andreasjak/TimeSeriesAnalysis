@@ -4,6 +4,7 @@ from scipy.stats import normaltest, jarque_bera, chi2, norm, t
 from statsmodels.tsa.stattools import adfuller
 from TSA.analysis import plot_cum_per, pacf, xcorr
 
+
 def whiteness_test(data, alpha=0.05, K=20, plotCumPer=True):
     """
     The function performs various whiteness tests. 
@@ -31,6 +32,7 @@ def whiteness_test(data, alpha=0.05, K=20, plotCumPer=True):
     
     if plotCumPer: plot_cum_per(data, alpha=alpha)    
 
+
 def check_if_white(data, K=20, alpha=0.05, which_test='monti', return_val=False):
     """
     The function computes the Monti test (using K terms, with default K = 20,
@@ -48,6 +50,7 @@ def check_if_white(data, K=20, alpha=0.05, which_test='monti', return_val=False)
     else:
         print(f"The data is NOT deemed to be white according to the Monti-test (as {Q:.2f} > {chiV:.2f}).")
 
+
 def monti_test(data, K=20, alpha=0.05):
     """
     The function computes the Monti statistic using K considered 
@@ -60,12 +63,13 @@ def monti_test(data, K=20, alpha=0.05):
     together with the Q value and the chi2 significance level.
     """
     N = len(data)
-    r = pacf(data,maxOrd=K)
+    r = pacf(data, maxOrd=K)
     Q = N * (N + 2) * np.sum(r[1:]**2 / (N - np.arange(1, K+1)))
     chiV = chi2.ppf(1-alpha, K)
     deemed_white = Q < chiV
 
     return deemed_white, Q, chiV
+
 
 def lbp_test(data, K=20, alpha=0.05):
     """
@@ -86,7 +90,7 @@ def lbp_test(data, K=20, alpha=0.05):
     m, N = x.shape
     
     # Only univariate case so far
-    r = xcorr(x[0],maxlag=K, biased=True)[1]
+    r = xcorr(x[0], maxlag=K, biased=True)[1]
     r = r/max(r)
     r = r[K+1:2*K+1]
 
@@ -94,6 +98,7 @@ def lbp_test(data, K=20, alpha=0.05):
     chiV = chi2.ppf(1 - alpha, K)
     deemedWhite = Q < chiV
     return deemedWhite, Q, chiV
+
 
 def ml_test(data, K=20, alpha=0.05):
     """
@@ -110,7 +115,7 @@ def ml_test(data, K=20, alpha=0.05):
     - chiV (float): Chi2 significance level.
     """
     N = len(data)
-    r = xcorr(data**2 - np.mean(data**2),maxlag=K, biased=True)[1] # Biased estimate
+    r = xcorr(data**2 - np.mean(data**2), maxlag=K, biased=True)[1] # Biased estimate
     r = r/max(r)
     r = r[K+1:2*K+1]
 
@@ -118,6 +123,7 @@ def ml_test(data, K=20, alpha=0.05):
     chiV = chi2.ppf(1 - alpha, K)
     deemedWhite = Q < chiV
     return deemedWhite, Q, chiV
+
 
 def count_sign_changes(data, confLev=0.95):
     """
@@ -143,6 +149,7 @@ def count_sign_changes(data, confLev=0.95):
     normConfLev = norm.ppf(1 - (1 - confLev) / 2)
     confInt = ((N - 1) / 2 + normConfLev * np.sqrt((N - 1) / 4) * np.array([-1, 1])) / (N-1)
     return nRatio, confInt
+
 
 def check_if_normal(data, which_test='D', alpha=0.05, return_val=False):
     """
@@ -177,6 +184,7 @@ def check_if_normal(data, which_test='D', alpha=0.05, return_val=False):
     
     if return_val:
         return deemed_normal
+
 
 def fisher_test(data, alpha=0.05, indF=None):
     """
@@ -217,6 +225,7 @@ def fisher_test(data, alpha=0.05, indF=None):
 
     return signPerFt, T, g
 
+
 def bolviken_test(data, Na=3, alpha=0.05):
     """
     Compute the Bolviken test to determine if data contains significant periodicities.
@@ -252,6 +261,7 @@ def bolviken_test(data, Na=3, alpha=0.05):
     
     return signPerInd, signPerVal
 
+
 def test_mean(data, mean0=0, signLvl=0.05, return_val=False):
     """"
     The function tests if the mean of the data can be deemed to be that of a 
@@ -274,6 +284,7 @@ def test_mean(data, mean0=0, signLvl=0.05, return_val=False):
     if return_val:
         return rejectMean, tRatio, tLimit
 
+
 def check_stationarity(data, maxLag=None, signLvl=0.05, return_val=False):
     """
     Check the stationarity of a time series data using the Augmented Dickey-Fuller test.
@@ -287,9 +298,9 @@ def check_stationarity(data, maxLag=None, signLvl=0.05, return_val=False):
     Returns:
     - tuple: A tuple containing the stationarity status (True if stationary, False otherwise), test statistic, and p-value if return_val is set to True.
     """
-    T, p = adfuller(data,maxlag=maxLag)[:2]
+    T, p = adfuller(data, maxlag=maxLag)[:2]
 
-    deemed_stationary = p<signLvl
+    deemed_stationary = p < signLvl
 
     if return_val:
         return deemed_stationary, T, p
