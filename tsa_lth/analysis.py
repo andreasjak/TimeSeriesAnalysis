@@ -1,3 +1,4 @@
+# Author: Filipp Lernbo
 import numpy as np
 import pandas as pd
 import re
@@ -13,6 +14,9 @@ def autolags(y):
     
     Parameters:
     - y: Data to calculate amount of lags from.
+
+    Returns: 
+    - (int): number of 
     """
     return int(round( 15*(len(y)/100)**0.25 ))
 
@@ -520,9 +524,23 @@ def box_cox(y, plotIt=True, titleStr=None, lamRange=[-2,2], noVals=100, transfor
     return maxLam, offsetValue
 
 def pzmap(b,a, return_val=False):
-    """Plot the complex z-plane given a transfer function.
+    """
+    Generate a pole-zero plot on the complex z-plane for the given transfer function.
+    This function normalizes the coefficients if they are greater than 1 and plots the unit circle, 
+    poles (as 'x'), and zeros (as 'o') on a 2D plot. The poles and zeros are calculated from the 
+    roots of the numerator (b) and denominator (a).
+
+    Parameters:
+    - b (list): Numerator coefficients of the transfer function.
+    - a (list): Denominator coefficients of the transfer function.
+    - return_val (bool, optional): If True, returns zeros, poles, and gain of the system.
+
+    Returns:
+    - tuple: A tuple containing arrays of zeros and poles, and the system gain if 'return_val' is True. 
+        Otherwise, plots the pzmap without any return.
+
     Copyright (c) 2011 Christopher Felton
-    https://www.dsprelated.com/showcode/244.php
+    Reference: https://www.dsprelated.com/showcode/244.php
     """
     b = np.array(b)
     a = np.array(a)

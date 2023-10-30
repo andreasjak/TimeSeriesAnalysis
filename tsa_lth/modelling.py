@@ -1,11 +1,12 @@
+# Author: Filipp Lernbo
 import numpy as np
 import scipy.signal as signal
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
-from TSA.analysis import plotACFnPACF, mat2np
-from TSA.tests import whiteness_test
+from tsa_lth.analysis import plotACFnPACF
+from tsa_lth.tests import whiteness_test
 from filterpy.kalman import KalmanFilter
-from statsmodels.tools.numdiff import approx_hess1, approx_hess2, approx_hess3
+from statsmodels.tools.numdiff import approx_hess1
 from nfoursid.nfoursid import NFourSID
 
 class PEM:
@@ -30,9 +31,12 @@ class PEM:
         Returns instance of PEMResult with details about the estimation.
     - rpem: Recursive Parameter Estimation using a Kalman Filter approach.
     - set_free_params: Set which polynomial coefficients are adjustable.
+
+    Note:
+    PEM only supports univariate time series models as of yet.
     """
     def __init__(self, y, x=None, A=[1], B=[], C=[1], D=[1], F=[1]):
-        self.y = y
+        self.y = np.array(y)
 
         # If given as polynomial or if given as model order
         self.A_guess = np.concatenate(([1],np.zeros(A))) if isinstance(A,int) else np.array(A)
@@ -56,7 +60,7 @@ class PEM:
         assert self.F_guess[0] == 1, "The leading coefficient of the F polynomial must be 1."
         
         self.isX = False if x is None else True
-        self.x = np.zeros(len(y)) if x is None else x
+        self.x = np.zeros(len(y)) if x is None else np.array(x).ravel()
 
         assert len(self.y)==len(self.x), "x and y should have the same length."
         
@@ -82,6 +86,7 @@ class PEM:
         self.F_est = np.copy(self.F_guess)
 
         self.theta_est = self._polys_to_theta(self.A_est, self.B_est, self.C_est, self.D_est, self.F_est)
+
 
     def fit(self, method='LS', bh=False, bh_iter=100):
         """
@@ -271,7 +276,6 @@ class PEM:
             Xsave[t] = kf.x
 
         return {'x': Xsave, 'ehat': ehat, 'vars': variances, 'ypred': predictions}
-
 
 
     def set_free_params(self, A_free=None, B_free=None, C_free=None, D_free=None, F_free=None):
@@ -601,7 +605,7 @@ class PEM:
         - summary: Generates and either prints or returns a summary of the PEM result.
         - predict: Computes a k-step prediction of the data.
         - forecast: Computes a forecast of the n next future values.
-        - plot: Plots the negative log-likelihood function against the model parameters.
+        - plotll: Plots the negative log-likelihood function against the model parameters.
             For one parameter, a 2D plot is generated, and for two parameters, a 3D surface plot is produced.
         """
         def __init__(self, theta, polys, polys_free, std_errs, poly_std_errs, conf_ints, resid, optimize_res, scores, model):
@@ -665,7 +669,20 @@ class PEM:
 
 
         def summary(self, return_val=False):
-            # Model strings
+            """
+            Generate a comprehensive summary of the model's results.
+
+            This method compiles the polynomial equations, statistics, and metrics related to the fitted PEM model, 
+            presenting a human-readable summary. It details the specific model used, polynomial orders, fit statistics 
+            and various scores (e.g., MSE, AIC) that evaluate the model's performance.
+
+            Parameters:
+            - return_val (bool): If True, the summary is returned as a string; otherwise, it is printed to the console. 
+                Default is False.
+
+            Returns:
+            - str or None: A string containing the compiled summary if `return_val` is True; otherwise, None.
+            """
             models = {
                 'A': "AR",
                 'C': "MA",
@@ -841,6 +858,7 @@ def filter(B,A,X,remove=False, axis=-1):
         * False (default): No values are removed.
         * True: Removes initial values based on the length of B.
         * int: Removes the specified number of initial values.
+    - axis (int): Axis along which the filter is applied. The default is -1, meaning filtering is applied along the last axis.
 
     Returns:
     - ndarray: Filtered data.
@@ -859,20 +877,66 @@ def filter(B,A,X,remove=False, axis=-1):
         if type(remove)==int: 
             Y = Y[remove:]
         elif type(remove)==bool:
-            Y = Y[len(B)-1:]
+            if B[0]==1: # if monic polynomial, this is the case with arma
+                Y = Y[len(B)-1:]
+            else:
+                Y = Y[len(B):]
+            
     return Y
 
 
-def seasonal(y, season: int, remove=True):
-    "Seasonally differentiates the process y to form ∇ₛy where s is the season."
-    if season<1: raise ValueError('Season should be at least 1')
+def seasonal(y, season: int, remove=True, undo=False):
+    """
+    Applies or reverses seasonal differentiation on data 'y' based on a specified 'season'.
+    
+    Parameters:
+    - y: The input data to be seasonally differentiated.
+    - season (int): The seasonality period. Must be at least 1.
+    - remove (bool, int): If True, removes the initial samples according to the function 'filter'. Defaults to True.
+    - undo (bool): If True, reverses the seasonal differentiation. Defaults to False.
+    
+    Returns:
+    - Seasonally differentiated data, or the reversed data if 'undo' is True.
+    """
+    
+    if season < 1: 
+        raise ValueError('Season should be at least 1')
     p = np.concatenate(([1], np.zeros(season-1), [-1]))
-    return filter(p,1,y, remove=remove)
+
+    if not undo:
+        return filter(p, 1, y, remove=remove)
+    else:
+        return filter(1, p, y, remove=remove)
 
 
 def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_free=None, A1_free=None,
                titleStr='',noLags='auto', method='LS', bh=False):
-    """Estimates the Box-Jenkins model y(t) = [B(z)*z^-d / A2(z)] x(t) + [C1(z)/A1(z)] e(t) using PEM"""
+    """
+    Fits a Box-Jenkins (BJ) model to the provided time series data using the Prediction Error Method (PEM),
+    and performs model checking through diagnostic plots and a whiteness test. The BJ model structure is defined as:
+    y(t) = [B(z)*z^-d / A2(z)] x(t) + [C1(z)/A1(z)] e(t)
+
+    Parameters:
+    - y (array-like): The output time series data to be modeled.
+    - x (array-like): The input time series data, related to the output data through the BJ model.
+    - B (int, array-like, optional): The order of B polynomial in the BJ model or the coefficients of B(z). 
+          Zero coefficients will be prepended if 'd' is greater than zero.
+    - d (int, optional): The delay in the input response, default is 0. Zeros are prepended to B based on 'd'.
+    - A2 (int, array-like, optional): The coefficients of A2(z), default is [1].
+    - C1 (int, array-like, optional): The coefficients of C1(z), default is [1].
+    - A1 (int, array-like, optional): The coefficients of A1(z), default is [1].
+    - B_free (array-like, optional): Flags indicating the free parameters in B(z).
+    - A2_free (array-like, optional): Flags indicating the free parameters in A2(z).
+    - C1_free (array-like, optional): Flags indicating the free parameters in C1(z).
+    - A1_free (array-like, optional): Flags indicating the free parameters in A1(z).
+    - titleStr (str, optional): Title for the diagnostic plots, default is an empty string.
+    - noLags (str, int, optional): Number of lags in the diagnostic plots, default is 'auto', which automatically determines an appropriate number.
+    - method (str, optional): Method for optimization used in the PEM, default is 'LS' (Least Squares).
+    - bh (bool, optional): Whether to use the Basin-Hopping global optimization algorithm, default is False.
+
+    Returns:
+    - model_fitted: An instance of the fitted BJ model, which includes methods and attributes to analyze the model's performance, such as residuals and summary statistics.
+    """
 
     B_new = np.concatenate((np.zeros(d), B)) if not isinstance(B, int) else np.concatenate((np.zeros(d), np.ones(B)))
     model = PEM(y, x, B=B_new, F=A2, C=C1, D=A1)
@@ -894,12 +958,30 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_
 
     return model_fitted
     
+
 def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='auto', method='LS', bh=False):
-    """Estimates the ARMA model A(z)y(t) = C(z)e(t) using PEM"""
+    """
+    Fits an ARMA model using the Prediction Error Method (PEM). 
+    Also performs model checking through diagnostic plots and a whiteness test.
+
+    Parameters:
+    - y (array-like): Time series data.
+    - A (int, array-like): Autoregressive model order (or coefficients).
+    - C (int, array-like): Moving average model order (or coefficients).
+    - A_free (array-like, optional): Flags indicating free parameters in A.
+    - C_free (array-like, optional): Flags indicating free parameters in C.
+    - titleStr (str, optional): Title for the diagnostic plots.
+    - noLags (str, int, optional): Number of lags in diagnostic plots, default is 'auto'.
+    - method (str, optional): Method for optimization, default 'LS' (Least Squares).
+    - bh (bool, optional): Use Basin-Hopping algorithm for global optimization, default is False.
+
+    Returns:
+    model_fitted: An instance of the fitted model.
+    """
     ordA = A if isinstance(A, int) else len(A)-1
     ordC = C if isinstance(C, int) else len(C)-1
     if ordA == 0 and ordC == 0:
-        plotACFnPACF(y, titleStr=titleStr, noLags='auto', includeZeroLag=False)
+        plotACFnPACF(y, titleStr=titleStr, noLags=noLags, includeZeroLag=False)
         return
     
     if not isinstance(A, int): A_free = np.array(A).astype(bool)
@@ -949,8 +1031,17 @@ def simulateARMA(AR=[1], MA=[1], size=500):
     else:
         return y
 
+
 def generate_stable_coefficients(order):
-    """Generate stable coefficients for AR or MA."""
+    """
+    Generates stable coefficients for Auto-Regressive (AR) or Moving Average (MA) processes of a specified order.
+
+    Args:
+    order (int): The order of the AR or MA process.
+
+    Returns:
+    numpy.ndarray: An array of stable coefficients, starting with 1 and followed by 'order' number of random coefficients between -1 and 1.
+    """
     while True:
         # Generate random coefficients
         coefficients = np.concatenate(([1],[np.round(np.random.uniform(-1, 1),2) for _ in range(order)]))
@@ -961,25 +1052,28 @@ def generate_stable_coefficients(order):
         if is_stable:
             return coefficients
 
+
 def simulate_model(x=None, A=[1], B=[0], C=[1], D=[1], F=[1], size=500, e_var=1):
     """
     Simulates a general model of the form A(z)y(t) = [B(z)/F(z)]x(t) + [C(z)/D(z)]e(t).
+    
+    Parameters:
+    - x (array-like): Input signal. If None, a zero signal of length 'size' is used. Defaults to None.
+    - A, B, C, D, F (array-like): Coefficients of the linear filter model. Defaults are [1], [0], [1], [1], and [1] respectively.
+    - size (int): Desired length of the simulated data, used if 'x' is None. Defaults to 500.
+    - e_var (float): Variance of the Gaussian noise added to the model. Defaults to 1.
+    
+    Returns:
+    - y (array-like): Simulated time series data resulting from the applied model.
     """
     if x is None:
         x = np.zeros(size)
     else:
         size = len(x)
     
-    # if not len(A): A = [1]
-    # if not len(B): B = [0]
-    # if not len(C): C = [1]
-    # if not len(D): D = [1]
-    # if not len(F): F = [1]
-    
     e = np.sqrt(e_var)*np.random.normal(size=size+100)
     y = filter(B,np.convolve(A,F),x) + filter(C,np.convolve(A,D), e)[100:]
     return y
-
 
 def set_order(indices):
     """
@@ -992,12 +1086,22 @@ def set_order(indices):
     - np.ndarray: Array with 1s at given indices.
     """
     indices = np.atleast_1d(indices).copy()
-    max_index = max(indices)
+    max_index = np.max(indices)
     result = np.zeros(max_index+1, dtype=int)
     result[indices] = 1
     return result
 
+
 def equal_length(*args):
+    """
+    Transforms a series of iterables to ensure they all have equal lengths by padding shorter iterables with zeros.
+
+    Args:
+    *args (iterables): Variable-length iterable arguments. All iterables must be of the same or various lengths.
+
+    Returns:
+    tuple: A tuple of lists, where each list corresponds to an input iterable, padded with zeros to ensure all lists are of equal length.
+    """
     lengths = [len(arg) for arg in args]
     max_length = max(lengths)
     
@@ -1009,9 +1113,19 @@ def equal_length(*args):
     
     return tuple(out_args)
 
+
 def polydiv(C, A, k):
     """
     Computes the polynomial division C(z) = A(z)*F(z) + z^{-k}*G(z).
+
+    Parameters:
+    - C (array): Dividend polynomial C(z).
+    - A (array): Divisor polynomial A(z).
+    - k (int): Degree of the monomial z^{-k} that multiplies G(z).
+
+    Returns:
+    - F (array): Quotient polynomial F(z) in the division.
+    - G (array): Remainder polynomial G(z) after performing the division.
     """
     C,A = equal_length(C,A)
     v = np.concatenate(([1],np.zeros(k-1)))
@@ -1021,9 +1135,19 @@ def polydiv(C, A, k):
 
 def recursiveAR(data, order, forgetting_factor=1.0, init_var=1000, theta_guess=None):
     """
-    Estimates AR parameters of data using the Recursive Least Squares method.
+    Performs recursive estimation of autoregressive (AR) model parameters using the 
+    Recursive Least Squares method.
+
+    Parameters:
+    - data (list/ndarray): Time series data.
+    - order (int): Order of the AR model.
+    - forgetting_factor (float, optional): Forgetting factor, defaults to 1.0.
+    - init_var (float, optional): Initial variance for covariance matrix, defaults to 1000.
+    - theta_guess (ndarray, optional): Initial guess for the AR parameters, defaults to None (zero initialization).
+
+    Returns:
+    - tuple: Estimated AR parameters and predicted values vector.
     """
-    
     N = len(data)
     R = np.eye(order) * init_var # Large initial covariance matrix due to uncertainty of guess
     theta = np.zeros(order).reshape(-1, 1) if theta_guess is None else np.array(theta_guess)  # Initial parameters are 0s
@@ -1049,7 +1173,19 @@ def recursiveAR(data, order, forgetting_factor=1.0, init_var=1000, theta_guess=N
 
 def recursiveARMA(data, ar_order, ma_order, forgetting_factor=1.0, init_var=1000, theta_guess=None):
     """
-    Estimates ARMA parameters of data using the Recursive Least Squares method.
+    Performs recursive estimation of autoregressive moving average (ARMA) model parameters 
+    using the Recursive Least Squares method.
+
+    Parameters:
+    - data (list/ndarray): Time series data.
+    - ar_order (int): Order of the autoregressive (AR) model component.
+    - ma_order (int): Order of the moving average (MA) model component.
+    - forgetting_factor (float, optional): Forgetting factor, defaults to 1.0.
+    - init_var (float, optional): Initial variance for covariance matrix, defaults to 1000.
+    - theta_guess (ndarray, optional): Initial guess for the ARMA parameters, defaults to None (zero initialization).
+
+    Returns:
+    - tuple: Estimated AR parameters, MA parameters, and predicted values vector.
     """
     N = len(data)
     total_order = ar_order + ma_order
@@ -1090,7 +1226,7 @@ def predict_pem(PEMResult, y, x=None, k=1, remove=True):
     - y (np.ndarray): Endogenous data to use for prediction.
     - x (np.ndarray): Exogenous imput signal. Default is None.
     - k (int): Number of steps for prediction. Default is 1.
-    - remove_initial (bool): Whether the fucntion removes the initial corrupt samples. Default is True.
+    - remove (bool): Whether the fucntion removes the initial corrupt samples. Default is True.
 
     Returns:
     - y_hat (array-like): The k-step prediction values.

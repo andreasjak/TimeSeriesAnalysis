@@ -1,15 +1,27 @@
+# Author: Filipp Lernbo
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import normaltest, jarque_bera, chi2, norm, t
 from statsmodels.tsa.stattools import adfuller
-from TSA.analysis import plot_cum_per, pacf, xcorr
+from tsa_lth.analysis import plot_cum_per, pacf, xcorr
 
 
 def whiteness_test(data, alpha=0.05, K=20, plotCumPer=True):
     """
-    The function performs various whiteness tests. 
-    The significance level indicates the likelihood that the signal is white but fails the test.
-    The parameter K denotes the number of correlation lags used to form the Portmanteau lack-of-fit tests.
+    Conducts whiteness tests on time series data to check for randomness.
+
+    This function applies Ljung-Box-Pierce, McLeod-Li, Monti, and sign change tests on 'data'.
+    The tests are based on autocorrelations up to lag 'K' and a significance level of 'alpha'.
+    If 'plotCumPer' is True, a cumulative periodogram is also displayed.
+
+    Parameters:
+    - data (array-like): Time series data to be tested.
+    - alpha (float, optional): Significance level for the tests, default is 0.05.
+    - K (int, optional): Number of lags in autocorrelation for the tests, default is 20.
+    - plotCumPer (bool, optional): Whether to plot the cumulative periodogram, default is True.
+
+    Returns:
+    None: Results are printed to the console; see individual test functions for potential return values.
     """
     print(f"Whiteness test with {alpha*100}% significance")
 
@@ -30,37 +42,26 @@ def whiteness_test(data, alpha=0.05, K=20, plotCumPer=True):
     is_white = confInt[0] < nRatio < confInt[1]
     print(f"  Sign change test:      {is_white} (white if {nRatio:.2f} in [{confInt[0]:.2f},{confInt[1]:.2f}])")
     
-    if plotCumPer: plot_cum_per(data, alpha=alpha)    
+    if plotCumPer: plot_cum_per(data, alpha=alpha)
 
 
-def check_if_white(data, K=20, alpha=0.05, which_test='monti', return_val=False):
+def monti_test(data, K=20, alpha=0.05, return_val=False):
     """
-    The function computes the Monti test (using K terms, with default K = 20,
-    and confidence alpha, with default = 0.05) to determine if the data is
-    white or not, returning the decision if return_val is true.
-    """
+    Conducts the Monti test to assess if a data sequence is white noise.
 
-    deemed_white, Q, chiV = monti_test(data, K, alpha)
+    Args:
+    data (array-like): Input sequence of time series data.
+    K (int, optional): Number of autocorrelations used in the test. Defaults to 20.
+    alpha (float, optional): Significance level for the test. Defaults to 0.05.
+    return_val (bool, optional): If True, returns a tuple instead of printing the result. Defaults to False.
 
-    if return_val:
-        return deemed_white
-    
-    if deemed_white:
-        print(f"The data is deemed to be WHITE according to the Monti-test (as {Q:.2f} < {chiV:.2f}).")
-    else:
-        print(f"The data is NOT deemed to be white according to the Monti-test (as {Q:.2f} > {chiV:.2f}).")
+    Returns:
+    tuple (bool, float, float), optional: A tuple (deemed_white, Q, chiV) indicating the test result (if return_val is True).
+                                           - deemed_white: True if data is considered white noise.
+                                           - Q: Monti statistic.
+                                           - chiV: Chi-squared distribution critical value.
 
-
-def monti_test(data, K=20, alpha=0.05):
-    """
-    The function computes the Monti statistic using K considered 
-    correlations. With significance alpha, one may reject the hypothesis 
-    that the residual is white if Q > chi^2_{1-alpha}(K). Thus, for a 
-    95% confidence, alpha = 0.05. Unless specified, the function uses K=20 
-    and alpha=0.05 as default.
-
-    The function returns deemed_white = True if the sequence is deemed white, 
-    together with the Q value and the chi2 significance level.
+    Note: If return_val is False, the test result is printed instead.
     """
     N = len(data)
     r = pacf(data, maxOrd=K)
@@ -68,7 +69,13 @@ def monti_test(data, K=20, alpha=0.05):
     chiV = chi2.ppf(1-alpha, K)
     deemed_white = Q < chiV
 
-    return deemed_white, Q, chiV
+    if return_val:
+        return deemed_white, Q, chiV
+
+    if deemed_white:
+        print(f"The data is deemed to be WHITE according to the Monti-test (as {Q:.2f} < {chiV:.2f}).")
+    else:
+        print(f"The data is NOT deemed to be white according to the Monti-test (as {Q:.2f} > {chiV:.2f}).")
 
 
 def lbp_test(data, K=20, alpha=0.05):
@@ -153,10 +160,18 @@ def count_sign_changes(data, confLev=0.95):
 
 def check_if_normal(data, which_test='D', alpha=0.05, return_val=False):
     """
-    The function computes a normality test to determine if the data is normal
-    distributed or not. If which_test is set to 'D' (default), the
-    D'Agostino-Pearson's K2 test is computed, otherwise the Jarque-Bera test.
-    If return_val is true, only the value is returned.
+    Performs a normality test on data, using either D'Agostino-Pearson's K2 or Jarque-Bera test.
+
+    Args:
+    data (array-like): Dataset for normality testing.
+    which_test (str, optional): Specifies the test to use ('D' for D'Agostino-Pearson, any other value for Jarque-Bera). Defaults to 'D'.
+    alpha (float, optional): Significance level for the normality test. Defaults to 0.05.
+    return_val (bool, optional): If True, only the test decision is returned. Otherwise, the decision is printed.
+
+    Returns:
+    bool: If return_val is True, returns whether the data is deemed normal. Otherwise, prints the test outcome.
+
+    Note: The function compares p-value with alpha to determine the normality of the data and informs the user accordingly.
     """
     if which_test == 'D':
         _, p = normaltest(data)
@@ -263,11 +278,20 @@ def bolviken_test(data, Na=3, alpha=0.05):
 
 
 def test_mean(data, mean0=0, signLvl=0.05, return_val=False):
-    """"
-    The function tests if the mean of the data can be deemed to be that of a 
-    process with mean-value mean0 (default zero), with significance signLvl 
-    (default 0.05), returning the decision, as well as the test ratio and the  
-    decision limit.
+    """
+    Tests if the sample mean significantly differs from mean0.
+
+    Args:
+    data (array-like): Sample data points.
+    mean0 (float, optional): Hypothesized mean value. Defaults to 0.
+    signLvl (float, optional): Significance level for the test. Defaults to 0.05.
+    return_val (bool, optional): If True, returns a tuple of (decision, test ratio, decision limit).
+
+    Returns:
+    bool: If return_val is False, returns whether the null hypothesis is rejected.
+    tuple: If return_val is True, returns (rejectMean, tRatio, tLimit).
+
+    Note: Prints the decision outcome.
     """
     x = np.copy(data)
     N = len(x)
