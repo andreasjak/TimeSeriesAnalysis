@@ -34,7 +34,7 @@ def whiteness_test(data, alpha=0.05, K=20, plotCumPer=True):
     print(f"  McLeod-Li test:        {S} (white if {Q:.2f} < {chiV:.2f})")
 
     # Perform Monti test
-    S, Q, chiV = monti_test(data, K, alpha)
+    S, Q, chiV = monti_test(data, K, alpha, return_val=True)
     print(f"  Monti test:            {S} (white if {Q:.2f} < {chiV:.2f})")
 
     # Sign change test
@@ -45,7 +45,7 @@ def whiteness_test(data, alpha=0.05, K=20, plotCumPer=True):
     if plotCumPer: plot_cum_per(data, alpha=alpha)
 
 
-def monti_test(data, K=20, alpha=0.05, return_val=False):
+def monti_test(data, K=20, alpha=0.05, return_val=True):
     """
     Conducts the Monti test to assess if a data sequence is white noise.
 
@@ -53,7 +53,7 @@ def monti_test(data, K=20, alpha=0.05, return_val=False):
     data (array-like): Input sequence of time series data.
     K (int, optional): Number of autocorrelations used in the test. Defaults to 20.
     alpha (float, optional): Significance level for the test. Defaults to 0.05.
-    return_val (bool, optional): If True, returns a tuple instead of printing the result. Defaults to False.
+    return_val (bool, optional): If True, returns a tuple instead of printing the result. Defaults to True.
 
     Returns:
     tuple (bool, float, float), optional: A tuple (deemed_white, Q, chiV) indicating the test result (if return_val is True).

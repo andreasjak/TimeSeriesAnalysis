@@ -588,7 +588,7 @@ def pzmap(b,a, return_val=False):
     ax.spines['top'].set_visible(False)
 
     # set the ticks
-    max_value = max(abs(np.max(p.real)), abs(np.max(p.imag)), abs(np.max(z.real)), abs(np.max(z.imag)))
+    max_value = max(abs(np.max(a)) for a in [p.real, p.imag, z.real, z.imag] if a.size > 0)
     r = max_value + 0.5
     plt.axis('scaled')
     plt.axis([-r, r, -r, r])

@@ -13,29 +13,37 @@ class PEM:
     """
     Parameter Estimation for general ARMAX model using Prediction Error Minimization.
 
-    Model: A(z)y(t) = [B(z)/F(z)]x(t) + [C(z)/D(z)]e(t)
+    Model: A(z)∇y(t) = [B(z)/F(z)]x(t) + [C(z)/D(z)]e(t).
 
     Attributes:
     - y: Endogenous signal.
     - x: Exogenous signal (default=None for ARMA models).
     - A, B, C, D, F: Initial polynomial guesses or polynomial orders (guesses default to 0 in that case).
+    - nabla: Differencing polynomial for non-seasonal and seasonal integration.
     - *_guess: Polynomials based on input parameters.
     - *_free: Boolean arrays indicating which polynomial coefficients are adjustable.
     - *_est: Estimated polynomial coefficients after fitting.
     - nA, nB, nC, nD, nF: Sizes of respective polynomials.
     - nFree: Number of adjustable parameters.
     - theta_est: Vector representation of model coefficients.
+    - diff: The degree of differencing to be applied.
 
     Methods:
     - fit: Estimate parameters by minimizing prediction error.
         Returns instance of PEMResult with details about the estimation.
     - rpem: Recursive Parameter Estimation using a Kalman Filter approach.
     - set_free_params: Set which polynomial coefficients are adjustable.
-
-    Note:
-    PEM only supports univariate time series models as of yet.
     """
-    def __init__(self, y, x=None, A=[1], B=[], C=[1], D=[1], F=[1]):
+    def __init__(self, y, x=None, A=[1], B=[], C=[1], D=[1], F=[1], diff=None):
+        """
+        Initialize the PEM class with model polynomials and optional differencing.
+
+        :param y: Array of the endogenous variable.
+        :param x: Array of the exogenous variable (None for ARMA).
+        :param A, B, C, D, F: Polynomials or orders for the ARMAX model.
+        :param diff: Order or list of orders of differencing to apply to y.
+        """
+
         self.y = np.array(y)
 
         # If given as polynomial or if given as model order
@@ -44,6 +52,21 @@ class PEM:
         self.C_guess = np.concatenate(([1],np.zeros(C))) if isinstance(C,int) else np.array(C)
         self.D_guess = np.concatenate(([1],np.zeros(D))) if isinstance(D,int) else np.array(D)
         self.F_guess = np.concatenate(([1],np.zeros(F))) if isinstance(F,int) else np.array(F)
+
+        # Create seasonal/diff polynomial
+        if diff is None or diff==0:
+            self.diff = np.array([0])
+            self.nabla = np.array([1])
+        elif isinstance(diff, int): 
+            self.diff = np.array([diff])
+            self.nabla = np.concatenate(([1], np.zeros(diff-1), [-1]))
+        else: # Array-like
+            self.diff = np.array(diff)
+            polys = [np.concatenate(([1], np.zeros(d-1), [-1])) for d in diff]
+            diff_poly = polys[0]
+            for poly in polys[1:]:
+                diff_poly = np.convolve(diff_poly, poly)
+            self.nabla = diff_poly
 
         # Ensure A and C start with 1
         assert self.A_guess[0] == 1, "The leading coefficient of the A polynomial must be 1."
@@ -60,7 +83,7 @@ class PEM:
         assert self.F_guess[0] == 1, "The leading coefficient of the F polynomial must be 1."
         
         self.isX = False if x is None else True
-        self.x = np.zeros(len(y)) if x is None else np.array(x).ravel()
+        self.x = np.zeros(len(y)) if x is None else np.array(x)
 
         assert len(self.y)==len(self.x), "x and y should have the same length."
         
@@ -186,7 +209,7 @@ class PEM:
                         'D': self.D_free,
                         'F': self.F_free}
 
-        return PEM.PEMResult(self.theta_est, polys, polys_free, std_errs, poly_std_errs, conf_ints, resid, result, scores, self)
+        return PEM.PEMResult(self.theta_est, polys, self.nabla, polys_free, std_errs, poly_std_errs, conf_ints, resid, result, scores, self)
 
 
     def rpem(self, P=None, Q=None, R=None, k_pred=None):
@@ -210,10 +233,11 @@ class PEM:
             A dictionary containing 'x' (state estimates), 'ehat' (prediction errors), 'R' (parameter variances)
             and 'ypred' (predictions for k steps ahead).
 
-        Note: Models with nontrivial D or F polynomials are not supported.
+        Note: Models with nontrivial D or F polynomials as well as differencing are not supported.
         """
         
         assert self.nD<=1 and self.nF<=1, 'Models with D and F polynomials are not yet supported with rpem.'
+        assert len(self.nabla)==1, 'Differencing not yet supported with rpem'
 
         init_model = self.fit()
         theta_init = init_model.params
@@ -223,26 +247,25 @@ class PEM:
         y = self.y
         u = self.x
 
-        kf.x = theta_init.reshape(-1,1)  # Initial state
+        kf.x = theta_init.reshape(-1,1)  # Initial state with guess from pem
         kf.F = np.eye(self.nFree)  # State transition matrix
 
         # Are the covariances correctly assumed?
-        if Q is None: kf.Q = np.array([[1e-6,0],[0,1e-6]]) # State noise covariance 
+        if Q is None: kf.Q *= 1e-6 # State noise covariance, 'Re'
         elif isinstance(Q, (float, int)): kf.Q = Q*np.eye(self.nFree)
         else: kf.Q = Q
 
-        kf.R = R if R is not None else np.var(init_model.resid)  # Measurement noise covariance
+        kf.R = R if R is not None else np.var(init_model.resid)  # Measurement noise covariance, 'Rw'
 
-        if P is None: kf.P = np.diag(init_model.std_errs ** 2) # Initial covariance
+        if P is None: kf.P = np.diag(init_model.std_errs ** 2) # Initial covariance, 'Rxx'
         elif isinstance(P, (float, int)): kf.P = P*np.eye(self.nFree)
         else: kf.P = P
 
 
         N = len(self.y)
-        start = np.max([self.nA,self.nB,self.nC,self.nD,self.nF])-1
+        start = np.max([self.nA,self.nB,self.nC])-1
         
         Xsave = np.zeros((N, self.nFree, 1))
-        Xsave[0,:] = kf.x
         ehat = np.zeros(N)
 
         k_preds = np.atleast_1d(k_pred) if k_pred is not None else []
@@ -318,8 +341,6 @@ class PEM:
         self.nFree = np.sum([np.sum(f) for f in [self.A_free,self.B_free,self.C_free,self.D_free,self.F_free]])
         self.theta_est = self._polys_to_theta(self.A_est, self.B_est, self.C_est, self.D_est, self.F_est)
 
-    def _samps_to_remove(self):
-        return self.nA+self.nD+self.nF-3
 
     def _pred_err(self, theta, y=None, x=None):
         A,B,C,D,F = self._theta_to_polys(theta)
@@ -333,22 +354,24 @@ class PEM:
         if x is None:
             x = self.x
 
-        # A*y = [B/F]*x + [C/D]*e
-        # => e = [A*D/C]*y - [B*D/F*C]*x
-        AxD = np.convolve(A,D)
+        # A*∇*y = [B/F]*x + [C/D]*e
+        # => e = [A*∇*D/C]*y - [B*D/F*C]*x
+        AxNabla = np.convolve(A,self.nabla)
+        AxNablaxD = np.convolve(AxNabla,D)
         BxD = np.convolve(B,D)
         FxC = np.convolve(F,C)
-        e = filter(AxD,C,y) - filter(BxD,FxC,x)
+        e = filter(AxNablaxD,C,y) - filter(BxD,FxC,x)
 
-        # rmv = self._samps_to_remove()
-        # e = e[rmv:]
+        rmv = self._samps_to_remove()
+        e = e[rmv:]
         return e
-            
 
+    def _samps_to_remove(self):
+        return np.max([self.nA, self.nD, self.nB, len(self.nabla)])-1
+    
     def _sum_of_squares(self, theta):
         e = self._pred_err(theta)
         return np.sum(e**2)
-
 
     def _log_likelihood(self, theta):
         e = self._pred_err(theta)
@@ -360,7 +383,6 @@ class PEM:
         # logL = -0.5 * n * np.log(2 * np.pi * sigma2) - (1 / (2 * sigma2)) * np.sum(e**2)
         logL = -N/2 * np.log(EtE/N) - N/2*1*np.log(2*np.pi) - N/2
         return logL
-
 
     def _calc_SE(self, theta):
         """
@@ -389,8 +411,8 @@ class PEM:
         SE = np.sqrt(var_e*np.diag(cov))
 
         # --Method 3-- matlab method
-        # r1 = self._matlab_cov_m(theta, inputpoly=False)['J']
-        # r2 = self._matlab_cov_m(theta, inputpoly=True)['J']
+        # r1 = self._matlab_cov(theta, inputpoly=False)['J']
+        # r2 = self._matlab_cov(theta, inputpoly=True)['J']
         # r3 = np.linalg.qr(np.linalg.pinv(r2.T).dot(r1.T))[1]
         # J = r3.dot(r1)
         # Jt = np.matrix.transpose(J)
@@ -399,7 +421,7 @@ class PEM:
 
         return SE
 
-    def _matlab_cov_m(self, theta, inputpoly):
+    def _matlab_cov(self, theta, inputpoly):
         """
         Attempt to translate the function gntrad in getErrorAndJacobian.m.
         If someone asks me to explain this tell my family i love them
@@ -504,7 +526,6 @@ class PEM:
         J = R[0:nparams,:]
 
         return {'EtE': e**2, 'Re': Re, 'R': R, 'J': J}
-    
 
     def _conf_ints(self, errs):
         # Calculate confidence intervals
@@ -590,12 +611,13 @@ class PEM:
 
         Attributes:
         - polys (dict): Dictionary containing the estimated polynomial coefficients.
-        - A, B, C, D, F (array-like): Specific polynomial coefficients extracted from `polys`.
-        - params (array-like): All estimated parameters in a combined theta array.
+        - A, B, C, D, F (np.ndarray): Specific polynomial coefficients extracted from `polys`.
+        - nabla (array): Differencing polynomial for non-seasonal and seasonal integration.
+        - params (np.ndarray): All estimated parameters in a combined theta array.
         - poly_std_errs (dict): Standard errors for each polynomial.
         - conf_ints (dict): Confidence intervals for each polynomial coefficient.
         - polys_free (dict): Boolean masks indicating which coefficients were free during estimation.
-        - resid (array-like): Residuals of the model.
+        - resid (np.ndarray): Residuals of the model.
         - optimize_res (object): Result object from the optimization process.
         - scores (dict): Dictionary containing various model evaluation metrics.
         - MSE, AIC, BIC, FPE, NRMSE: Specific scores extracted from `scores` for convenience.
@@ -608,13 +630,14 @@ class PEM:
         - plotll: Plots the negative log-likelihood function against the model parameters.
             For one parameter, a 2D plot is generated, and for two parameters, a 3D surface plot is produced.
         """
-        def __init__(self, theta, polys, polys_free, std_errs, poly_std_errs, conf_ints, resid, optimize_res, scores, model):
+        def __init__(self, theta, polys, nabla, polys_free, std_errs, poly_std_errs, conf_ints, resid, optimize_res, scores, model):
             self.polys = polys
             self.A = polys['A']
             self.B = polys['B']
             self.C = polys['C']
             self.D = polys['D']
             self.F = polys['F']
+            self.nabla = nabla
             self.params = theta # All estimated parameters in theta array
             self.std_errs = std_errs # Standard errors
             self.poly_std_errs = poly_std_errs
@@ -704,6 +727,9 @@ class PEM:
 
             if 'A' in active_keys:
                 equation.append("A(z)")
+
+            if len(self.nabla)>1:
+                equation.append(self._nabla_string(self.model.diff))
             equation.append("y(t) = ")
             equation = [''.join(equation)]
 
@@ -808,7 +834,8 @@ class PEM:
 
             # Map for converting numbers to their superscript equivalents
             superscript_map = {
-                '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'
+                '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', 
+                '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'
             }
 
             def to_superscript(num):
@@ -843,6 +870,20 @@ class PEM:
                 terms.append(term_str)
 
             return ' + '.join(terms).replace(" + -", " - ")
+        
+        def _nabla_string(self, int_list):
+            subscript_map = {
+                0: '\u2080', 1: '\u2081', 2: '\u2082', 3: '\u2083', 4: '\u2084',
+                5: '\u2085', 6: '\u2086', 7: '\u2087', 8: '\u2088', 9: '\u2089'
+            }
+            nabla_str = ""
+
+            for number in int_list:
+                subscript = ''.join(subscript_map[int(digit)] for digit in str(number))
+                nabla_str += '\u2207' + subscript
+
+            return nabla_str
+
 
 
 
@@ -885,31 +926,32 @@ def filter(B,A,X,remove=False, axis=-1):
     return Y
 
 
-def seasonal(y, season: int, remove=True, undo=False):
+def difference(y, season=1, remove=True):
     """
-    Applies or reverses seasonal differentiation on data 'y' based on a specified 'season'.
+    Applies differentiation on data 'y' based on a specified season or list of seasons.
     
     Parameters:
-    - y: The input data to be seasonally differentiated.
-    - season (int): The seasonality period. Must be at least 1.
-    - remove (bool, int): If True, removes the initial samples according to the function 'filter'. Defaults to True.
-    - undo (bool): If True, reverses the seasonal differentiation. Defaults to False.
+    - y (ndarray): The input data to be differentiated.
+    - season (int or list of int): The seasonality period or a list of periods. Must be at least 1 or non-empty. Defaults to 1.
+    - remove (bool, int): If True, removes the initial corrupt samples according to the function 'filter'. Defaults to False.
     
     Returns:
-    - Seasonally differentiated data, or the reversed data if 'undo' is True.
+    - ndarray: Seasonally differentiated data.
     """
-    
-    if season < 1: 
-        raise ValueError('Season should be at least 1')
-    p = np.concatenate(([1], np.zeros(season-1), [-1]))
 
-    if not undo:
+    def single_season_difference(y, season):
+        p = np.concatenate(([1], np.zeros(season - 1), [-1]))
         return filter(p, 1, y, remove=remove)
-    else:
-        return filter(1, p, y, remove=remove)
+    
+    if isinstance(season, int):
+        return single_season_difference(y, season)
+    else: # If list
+        for s in season:
+            y = single_season_difference(y, s)
+        return y
 
 
-def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_free=None, A1_free=None,
+def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], diff=None, B_free=None, A2_free=None, C1_free=None, A1_free=None,
                titleStr='',noLags='auto', method='LS', bh=False):
     """
     Fits a Box-Jenkins (BJ) model to the provided time series data using the Prediction Error Method (PEM),
@@ -925,6 +967,7 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_
     - A2 (int, array-like, optional): The coefficients of A2(z), default is [1].
     - C1 (int, array-like, optional): The coefficients of C1(z), default is [1].
     - A1 (int, array-like, optional): The coefficients of A1(z), default is [1].
+    - diff (int, array-like): Order(s) of differencing to apply to y.
     - B_free (array-like, optional): Flags indicating the free parameters in B(z).
     - A2_free (array-like, optional): Flags indicating the free parameters in A2(z).
     - C1_free (array-like, optional): Flags indicating the free parameters in C1(z).
@@ -935,11 +978,11 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_
     - bh (bool, optional): Whether to use the Basin-Hopping global optimization algorithm, default is False.
 
     Returns:
-    - model_fitted: An instance of the fitted BJ model, which includes methods and attributes to analyze the model's performance, such as residuals and summary statistics.
+    - model_fitted: An instance of the fitted PEM model.
     """
 
     B_new = np.concatenate((np.zeros(d), B)) if not isinstance(B, int) else np.concatenate((np.zeros(d), np.ones(B)))
-    model = PEM(y, x, B=B_new, F=A2, C=C1, D=A1)
+    model = PEM(y, x, B=B_new, F=A2, C=C1, D=A1, diff=diff)
 
     if isinstance(B, int):
         B_free = np.concatenate((np.zeros(d), np.ones(B)))
@@ -959,7 +1002,7 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], B_free=None, A2_free=None, C1_
     return model_fitted
     
 
-def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='auto', method='LS', bh=False):
+def estimateARMA(y, A=0, C=0, diff=None, A_free=None, C_free=None, titleStr='', noLags='auto', method='LS', bh=False):
     """
     Fits an ARMA model using the Prediction Error Method (PEM). 
     Also performs model checking through diagnostic plots and a whiteness test.
@@ -968,6 +1011,7 @@ def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='aut
     - y (array-like): Time series data.
     - A (int, array-like): Autoregressive model order (or coefficients).
     - C (int, array-like): Moving average model order (or coefficients).
+    - diff (int, array-like): Order(s) of differencing to apply to y.
     - A_free (array-like, optional): Flags indicating free parameters in A.
     - C_free (array-like, optional): Flags indicating free parameters in C.
     - titleStr (str, optional): Title for the diagnostic plots.
@@ -981,12 +1025,16 @@ def estimateARMA(y, A=0, C=0, A_free=None, C_free=None, titleStr='', noLags='aut
     ordA = A if isinstance(A, int) else len(A)-1
     ordC = C if isinstance(C, int) else len(C)-1
     if ordA == 0 and ordC == 0:
-        plotACFnPACF(y, titleStr=titleStr, noLags=noLags, includeZeroLag=False)
+        if diff is None:
+            plotACFnPACF(y, titleStr=titleStr, noLags=noLags, includeZeroLag=False)
+        else:
+            yplot = difference(y, diff, remove=True)
+            plotACFnPACF(yplot, titleStr=titleStr, noLags=noLags, includeZeroLag=False)
         return
     
     if not isinstance(A, int): A_free = np.array(A).astype(bool)
     if not isinstance(C, int): C_free = np.array(C).astype(bool)
-    model = PEM(y, A=ordA, C=ordC)
+    model = PEM(y, A=ordA, C=ordC, diff=diff)
     model.set_free_params(A_free=A_free, C_free=C_free)
     model_fitted = model.fit(method=method, bh=bh)
     res = model_fitted.resid
@@ -1217,7 +1265,7 @@ def recursiveARMA(data, ar_order, ma_order, forgetting_factor=1.0, init_var=1000
     return ARest, MAest, yhat
 
 
-def predict_pem(PEMResult, y, x=None, k=1, remove=True):
+def predict_pem(PEMResult, y, x=None, k=1, remove=False):
     """
     Computes a k-step prediction of the signal y.
 
@@ -1233,9 +1281,9 @@ def predict_pem(PEMResult, y, x=None, k=1, remove=True):
     """
     r = PEMResult
     if r.model.isX: # ARMAX
-        # A*y = [B/F]*x + [C/D]*e
-        # => A*F*D*y = B*D*x + C*F*e
-        K_A = np.convolve(np.convolve(r.A,r.F),r.D)
+        # A*∇*y = [B/F]*x + [C/D]*e
+        # => A*F*D*∇*y = B*D*x + C*F*e
+        K_A = np.convolve(np.convolve(np.convolve(r.A,r.F),r.D),r.nabla)
         K_B = np.convolve(r.B,r.D)
         K_C = np.convolve(r.C,r.F)
         # K_A*y = K_B*x + K_C*e
@@ -1246,9 +1294,10 @@ def predict_pem(PEMResult, y, x=None, k=1, remove=True):
         nr = np.max([len(F_khat),len(G_khat),len(G_k)])
         
     else: # ARMA
-        # A*y = [C/D]*e
-        # => A*D*y = C*e
-        F_k, G_k = polydiv(r.C,np.convolve(r.A,r.D),k)
+        # A*∇*y = [C/D]*e
+        # => A*D*∇*y = C*e
+        ADn = np.convolve(np.convolve(r.A,r.D),r.nabla)
+        F_k, G_k = polydiv(r.C,ADn,k)
         y_hat = filter(G_k,r.C,y)
         nr = len(G_k)
 
@@ -1256,7 +1305,7 @@ def predict_pem(PEMResult, y, x=None, k=1, remove=True):
     return y_hat[nr:] if remove else y_hat
 
 
-def prediction_residual(PEMResult, y, x=None, k=1):
+def prediction_residual(PEMResult, y, x=None, k=1, plotIt=False):
     """
     Calculate the residuals of a k-step prediction for a given signal.
 
@@ -1265,14 +1314,18 @@ def prediction_residual(PEMResult, y, x=None, k=1):
     - y (np.ndarray): The original signal data.
     - x (np.ndarray, optional): Exogenous input signal. Default is None.
     - k (int, optional): Number of future steps over which prediction is made. Default is 1.
+    - plotIt (bool): Whether the acf and pacf should be plotted. Default is False.
 
     Returns:
     - np.ndarray: Residuals from the prediction (actual - predicted values).
     """
     yhat = predict_pem(PEMResult,y,x,k,remove=True)
     res = y[-len(yhat):] - yhat
-    return res
 
+    if plotIt:
+        plotACFnPACF(res)
+
+    return res
 
 
 def show_model(model): 
