@@ -5,7 +5,7 @@ setup(
     name='tsa-lth',
     version='1.0',
     description='Package for time series analysis course at LTH',
-    author='Filipp Lernbo, Tadas',
+    author='Filipp Lernbo, Tadas Paskevicius',
     packages=['tsa_lth'],
     install_requires=[
         "filterpy",
