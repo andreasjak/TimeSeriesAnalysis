@@ -1,0 +1,16 @@
+%
+% Data file: dataLydiaPinkham.m
+%
+% The file contains the Lydia Pinkham annual advertising and sales data 
+% from 1907 to 1960.
+%
+% Source: Wei, Time Series Analysis, Univariate and Multivariate Methods, 2006
+%
+
+
+% Reference: 
+%   "An Introduction to Time Series Modeling", 4th ed, by Andreas Jakobsson
+%   Studentlitteratur, 2021
+%
+data_adver = [ 608 451  529  543  525  549  525  578  609  504 752  613  862  866 1016 1360 1482 1608 1800 1941 1229 1373 1611 1568  983 1046 1453 1504  807  339 562  745  749  862 1034 1054 1164 1102 1145 1012 836  941  981  974  766  920  964  811  789  802 770  639  644  564 ];
+data_sales = [ 1016 921  934  976  930 1052 1184 1089 1087 1154 1330 1980 2223 2203 2514 2726 3185 3351 3438 2917 2359 2240 2196 2111 1806 1644 1814 1770 1518 1103 1266 1473 1423 1767 2161 2336 2602 2518 2637 2177 1920 1910 1984 1787 1689 1866 1896 1684 1633 1657 1569 1390 1387 1289 ];
