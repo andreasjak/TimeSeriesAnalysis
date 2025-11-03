@@ -1,5 +1,6 @@
-filterpy
-matplotlib
-panda
+numpy
+pandas
 scipy
+matplotlib
 statsmodels
+filterpy
