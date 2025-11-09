@@ -9,8 +9,8 @@ Before running the project, make sure the following dependencies are installed i
 * `pandas`
 * `scipy`
 * `matplotlib`
-* `statsmodels`
 * `filterpy`
+* `soundfile`
 
 ### Option 1: Clone the Repository (Recommended)
 
