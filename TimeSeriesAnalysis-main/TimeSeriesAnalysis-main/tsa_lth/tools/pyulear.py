@@ -1,4 +1,5 @@
 
+import inspect
 import numpy as np
 from scipy.signal import freqz
 from statsmodels.regression.linear_model import yule_walker
@@ -33,7 +34,9 @@ def pyulear(y, order, nfft, option="centered", fs=1.0):
     y = y - y.mean()  # remove mean, like MATLAB
 
     # Estimate AR coefficients and noise variance
-    phi, sigma = yule_walker(y, order=order, method="mle", demean=False)
+    # statsmodels >= 0.15 warns that yule_walker will return a result object; keep the tuple form
+    kw = {"result_object": False} if "result_object" in inspect.signature(yule_walker).parameters else {}
+    phi, sigma = yule_walker(y, order=order, method="mle", demean=False, **kw)
     a = np.r_[1.0, -phi]  # AR denominator polynomial
     sigma2 = sigma**2
 

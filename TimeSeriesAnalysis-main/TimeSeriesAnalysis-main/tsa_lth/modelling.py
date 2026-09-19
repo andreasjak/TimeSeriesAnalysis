@@ -287,13 +287,21 @@ class PEM:
             kf.predict()
             kf.update(y[t])
 
-            ehat[t] = kf.y.ravel()
+            ehat[t] = kf.y.item()
 
-            # Predictions
+            # Predictions. Values after time t are not known yet: use the earlier predictions
+            # in place of future outputs and zero in place of future noise. The input is assumed known.
             if len(k_preds):
+                y_pred = {}
+                for j in range(1, end+1):
+                    s = t + j
+                    Ha = np.array([-(y[s-n] if s-n <= t else y_pred[s-n]) for n in np.where(self.A_free)[0]])
+                    Hb = np.array([u[s-n] for n in np.where(self.B_free)[0]])
+                    Hc = np.array([(ehat[s-n] if s-n <= t else 0.0) for n in np.where(self.C_free)[0]])
+                    H_pred = np.concatenate((Ha,Hb,Hc)).reshape(1,-1)
+                    y_pred[s] = (H_pred @ kf.x).item()
                 for k in k_preds:
-                    H_pred = createH(t+k)
-                    predictions[k][t+k] = np.ravel(H_pred @ kf.x)
+                    predictions[k][t+k] = y_pred[t+k]
             
             variances[t] = np.diag(kf.P).reshape(-1,1)
             Xsave[t] = kf.x
@@ -981,16 +989,31 @@ def estimateBJ(y,x,B=[],d=0,A2=[1],C1=[1],A1=[1], diff=None, B_free=None, A2_fre
     - model_fitted: An instance of the fitted PEM model.
     """
 
-    B_new = np.concatenate((np.zeros(d), B)) if not isinstance(B, int) else np.concatenate((np.zeros(d), np.ones(B)))
-    model = PEM(y, x, B=B_new, F=A2, C=C1, D=A1, diff=diff)
+    # As in estimateBJ.m: for polynomials given as arrays, the zero coefficients are fixed to zero
+    # and the other coefficients are free (unless *_free is given), and the initial guess is the
+    # given polynomial with all but the first coefficient scaled by 0.3.
+    def init_and_free(P, P_free):
+        if isinstance(P, int):
+            return P, P_free
+        P = np.array(P, dtype=float)
+        if P_free is None and len(P) > 1:
+            P_free = P != 0
+        P_init = P.copy()
+        P_init[1:] = 0.3 * P_init[1:]
+        return P_init, P_free
+
+    A2, A2_free = init_and_free(A2, A2_free)
+    C1, C1_free = init_and_free(C1, C1_free)
+    A1, A1_free = init_and_free(A1, A1_free)
 
     if isinstance(B, int):
+        B_new = np.concatenate((np.zeros(d), np.ones(B)))
         B_free = np.concatenate((np.zeros(d), np.ones(B)))
     else:
-        if B_free is None:
-            B_free = np.concatenate((np.zeros(d), np.ones(len(B)))) 
-        else:
-            B_free = np.concatenate((np.zeros(d), B_free))
+        B, B_free = init_and_free(B, B_free)
+        B_new = np.concatenate((np.zeros(d), B))
+        B_free = np.concatenate((np.zeros(d), np.ones(len(B)) if B_free is None else B_free))
+    model = PEM(y, x, B=B_new, F=A2, C=C1, D=A1, diff=diff)
 
     model.set_free_params(B_free=B_free, F_free=A2_free, C_free=C1_free, D_free=A1_free)
     model_fitted = model.fit(method=method, bh=bh)
@@ -1209,7 +1232,7 @@ def recursiveAR(data, order, forgetting_factor=1.0, init_var=1000, theta_guess=N
         x = np.array(data[k-order:k][::-1]).reshape(-1, 1)  # data vector
         # Recursive update
         y = data[k]
-        yhat[k] = x.T @ theta
+        yhat[k] = (x.T @ theta).item()
         ehat = y - yhat[k]
         gain = R @ x / (forgetting_factor + x.T @ R @ x)
         theta = theta + gain * ehat
@@ -1252,7 +1275,7 @@ def recursiveARMA(data, ar_order, ma_order, forgetting_factor=1.0, init_var=1000
         x = np.concatenate((x_ar, x_ma)).reshape(-1, 1)
 
         y = data[k]
-        yhat[k] = x.T @ theta
+        yhat[k] = (x.T @ theta).item()
         ehat = y - yhat[k]
         errors[k] = ehat
         gain = R @ x / (forgetting_factor + x.T @ R @ x)
@@ -1263,7 +1286,7 @@ def recursiveARMA(data, ar_order, ma_order, forgetting_factor=1.0, init_var=1000
 
     # Splitting the estimates for AR and MA parts
     ARest = -ests[:, :ar_order]
-    MAest = -ests[:, ar_order:]
+    MAest = ests[:, ar_order:]  # C(z) = 1 + c_1 z^-1 + ..., so the MA regressors enter with a plus sign
 
     return ARest, MAest, yhat
 
@@ -1506,7 +1529,7 @@ class MultiInputPEM:
     
     def _init_single_poly(self, poly, default=1):
         """Initialize a single polynomial from int or array."""
-        if poly is None or poly == default:
+        if poly is None or (np.isscalar(poly) and poly == default):
             return np.array([float(default)])
         elif isinstance(poly, int):
             return np.concatenate([[float(default)], np.zeros(poly)])
@@ -1826,21 +1849,30 @@ class MultiInputPEM:
                                        self.C_est, self.D_est, self.y, self.x, k)
     
     def _compute_prediction(self, A, B_list, F_list, C, D, y, x, k):
-        """Compute k-step prediction using polynomial division."""
-        # This is complex for multi-input; simplified version
-        # Full implementation would use polydiv for each transfer function
-        AnD = np.convolve(np.convolve(A, self.nabla), D)
-        AnC = np.convolve(np.convolve(A, self.nabla), C)
-        
-        # For multi-input, approximate with filtering
-        yhat = np.zeros(len(y))
-        for i in range(self.n_inputs):
-            BD = np.convolve(B_list[i], AnD)
-            FC = np.convolve(F_list[i], AnC)
-            yhat += filter(BD, FC, x[:, i])
-        
-        return yhat
+        """
+        Compute the k-step prediction using polynomial division, as in predict_pem.
 
+        The model A*nabla*y = sum_i [B_i/F_i]*x_i + [C/D]*e is written as
+        K_A*y = sum_i K_B_i*x_i + K_C*e, with K_A = A*nabla*D*prod(F), K_B_i = B_i*D*prod_{j!=i}(F_j),
+        and K_C = C*prod(F). As in predict_pem, the inputs are assumed known.
+        """
+        prodF = np.array([1.0])
+        for F_i in F_list:
+            prodF = np.convolve(prodF, F_i)
+        K_A = np.convolve(np.convolve(np.convolve(A, self.nabla), D), prodF)
+        K_C = np.convolve(C, prodF)
+
+        F_k, G_k = polydiv(K_C, K_A, k)
+        yhat = filter(G_k, K_C, y)
+        for i in range(self.n_inputs):
+            K_B = np.convolve(B_list[i], D)
+            for j in range(self.n_inputs):
+                if j != i:
+                    K_B = np.convolve(K_B, F_list[j])
+            F_khat, G_khat = polydiv(np.convolve(K_B, F_k), K_C, k)
+            yhat = yhat + filter(F_khat, 1, x[:, i]) + filter(G_khat, K_C, x[:, i])
+
+        return yhat
 
 class MultiInputPEMResult:
     """
@@ -2197,3 +2229,32 @@ class MultiInputPEMResult:
     def whiteness_test(self):
         """Perform whiteness test on residuals."""
         whiteness_test(self.residuals)
+
+
+def poly_prod(A, B, stdA=None, stdB=None):
+    """
+    Computes the polynomial product C = A*B (Python version of polyProd.m).
+
+    If the standard deviations of the coefficients in A and B are given, the standard deviations
+    of the coefficients in C are also computed, assuming independent Normal distributed coefficients:
+
+        Var(c_k) = sum_{i+j=k} a_i^2 var(b_j) + b_j^2 var(a_i) + var(a_i) var(b_j)
+
+    Parameters:
+    - A, B (array-like): Polynomial coefficients.
+    - stdA, stdB (array-like, optional): Standard deviations of the coefficients of A and B.
+
+    Returns:
+    - C (ndarray): The polynomial product.
+    - stdC (ndarray): The standard deviations of the coefficients of C (empty if stdA and stdB are not given).
+    """
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    C = np.convolve(A, B)
+    if stdA is None or stdB is None:
+        return C, np.array([])
+
+    vA = np.asarray(stdA, dtype=float)**2
+    vB = np.asarray(stdB, dtype=float)**2
+    varC = np.convolve(A**2, vB) + np.convolve(vA, B**2) + np.convolve(vA, vB)
+    return C, np.sqrt(varC)

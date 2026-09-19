@@ -12,6 +12,13 @@ Before running the project, make sure the following dependencies are installed i
 * `statsmodels`
 * `filterpy`
 * `soundfile`
+* `jupyter` (to run the notebooks)
+
+You can install all of them with:
+
+```bash
+pip install -r TimeSeriesAnalysis-main/TimeSeriesAnalysis-main/requirements.txt jupyter
+```
 
 ### Option 1: Clone the Repository (Recommended)
 
@@ -36,11 +43,24 @@ Once installed or downloaded, you can run your projects directly from within the
 
 ### Note
 
-You can also install the package as a **local editable library** using `pip`, but note that this method has **not yet been fully tested**:
+You can also install the package as a **local editable library** using `pip`:
 
 ```bash
-pip install -e path/to/TimeSeriesAnalysis
+pip install -e path/to/TimeSeriesAnalysis/TimeSeriesAnalysis-main/TimeSeriesAnalysis-main
 ```
+
+
+## Contents
+
+MATLAB is not needed; all course material is in Python.
+
+* `Lectures/` – the example code from the lectures (`code1.ipynb`–`code28.ipynb`) and the examination code format (`examCode.py`).
+* `labs/` – the three computer exercises (`lab1.ipynb`–`lab3.ipynb`).
+* `mini_projects/` – the three voluntary mini-projects.
+* `data/` – all data sets. See [`data/README.md`](./data/README.md) for how to load them.
+* `TimeSeriesAnalysis-main/TimeSeriesAnalysis-main/tsa_lth/` – the course Python package, which replaces the MATLAB functions used in the course.
+
+Start Jupyter from the repository folder (`jupyter notebook` or `jupyter lab`) and open the notebooks from there, so that the relative paths to `data/` and `tsa_lth` work.
 
 
 ## Contributing

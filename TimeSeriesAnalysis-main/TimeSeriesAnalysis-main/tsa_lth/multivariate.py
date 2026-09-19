@@ -461,3 +461,47 @@ lbp_test = lbp_test_multivariate
 
 
 
+
+
+def wwra(Rfb, M1, M2):
+    """
+    Implements the Whittle-Wiggins-Robinson Algorithm (Python version of wwra.m).
+
+    See Söderström & Stoica, "System identification", pp. 310-319.
+
+    Parameters:
+    - Rfb (ndarray): The M1+1 block matrices of the block-Toeplitz covariance matrix,
+      given as an array of shape (M1+1, M2+1, M2+1).
+    - M1 (int): Prediction order.
+    - M2 (int): Size of the block matrices minus one.
+
+    Returns:
+    - An (ndarray): The M1+1 forward prediction matrices, shape (M1+1, M2+1, M2+1).
+    - Bn (ndarray): The M1+1 backward prediction matrices, shape (M1+1, M2+1, M2+1).
+    - Pf (ndarray): The forward prediction covariance matrix.
+    - Pb (ndarray): The backward prediction covariance matrix.
+    """
+    Rfb = np.asarray(Rfb)
+    I = np.eye(M2+1)
+    An = np.zeros((M1+1, M2+1, M2+1), dtype=Rfb.dtype)
+    Bn = np.zeros_like(An)
+    An[0] = I
+    Bn[0] = I
+    Pf = Rfb[0].copy()
+    Pb = Pf.copy()
+
+    for n in range(M1):
+        Ao = An.copy()
+        Bo = Bn.copy()
+        Pn = Rfb[n+1].copy()
+        for k in range(1, n+1):
+            Pn = Pn + Ao[k] @ Rfb[n-k+1]
+        An[n+1] = -Pn @ np.linalg.inv(Pb)
+        Bn[n+1] = -Pn.conj().T @ np.linalg.inv(Pf)
+        for k in range(1, n+1):
+            An[k] = Ao[k] + An[n+1] @ Bo[n-k+1]
+            Bn[k] = Bo[k] + Bn[n+1] @ Ao[n-k+1]
+        Pf = Pf + An[n+1] @ Pn.conj().T
+        Pb = Pb + Bn[n+1] @ Pn
+
+    return An, Bn, Pf, Pb

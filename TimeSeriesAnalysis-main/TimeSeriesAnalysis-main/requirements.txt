@@ -4,3 +4,4 @@ scipy
 matplotlib
 statsmodels
 filterpy
+soundfile

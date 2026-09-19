@@ -1,8 +1,8 @@
 #Marcus Lindell & Casper Schwerin
-from tools.ml import ml_test
-from tools.lbp import lbp_test
-from tools.monti import monti_test
-from tools.sign import sign_test
+from tsa_lth.tools.ml import ml_test
+from tsa_lth.tools.lbp import lbp_test
+from tsa_lth.tools.monti import monti_test
+from tsa_lth.tools.sign import sign_test
 
 #checks the whiteness of data using 4 tests
 def whitenessTest(x, k = 24, alpha=0.05):
