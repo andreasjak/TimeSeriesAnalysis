@@ -2,7 +2,7 @@
 from statsmodels.tsa.stattools import acf, pacf 
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from scipy.stats import norm
-from tools.niceplot import plot_colors
+from tsa_lth.tools.niceplot import plot_colors
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import boxcox_normplot, boxcox

@@ -6,7 +6,7 @@ from statsmodels.tsa.stattools import adfuller
 from tsa_lth.analysis import plot_cum_per, pacf, xcorr
 
 
-def whiteness_test(data, alpha=0.05, K=25, plotCumPer=False):
+def whiteness_test(data, alpha=0.05, K=24, plotCumPer=False):
     """
     Conducts whiteness tests on time series data to check for randomness.
 
@@ -17,7 +17,7 @@ def whiteness_test(data, alpha=0.05, K=25, plotCumPer=False):
     Parameters:
     - data (array-like): Time series data to be tested.
     - alpha (float, optional): Significance level for the tests, default is 0.05.
-    - K (int, optional): Number of lags in autocorrelation for the tests, default is 20.
+    - K (int, optional): Number of lags in autocorrelation for the tests, default is 24 (as in whitenessTest.m).
     - plotCumPer (bool, optional): Whether to plot the cumulative periodogram, default is True.
 
     Returns:
@@ -45,13 +45,13 @@ def whiteness_test(data, alpha=0.05, K=25, plotCumPer=False):
     if plotCumPer: plot_cum_per(data, alpha=alpha)
 
 
-def monti_test(data, K=20, alpha=0.05, return_val=True):
+def monti_test(data, K=25, alpha=0.05, return_val=True):
     """
     Conducts the Monti test to assess if a data sequence is white noise.
 
     Args:
     data (array-like): Input sequence of time series data.
-    K (int, optional): Number of autocorrelations used in the test. Defaults to 20.
+    K (int, optional): Number of autocorrelations used in the test. Defaults to 25 (as in montiTest.m).
     alpha (float, optional): Significance level for the test. Defaults to 0.05.
     return_val (bool, optional): If True, returns a tuple instead of printing the result. Defaults to True.
 
@@ -78,7 +78,7 @@ def monti_test(data, K=20, alpha=0.05, return_val=True):
         print(f"The data is NOT deemed to be white according to the Monti-test (as {Q:.2f} > {chiV:.2f}).")
 
 
-def lbp_test(data, K=20, alpha=0.05):
+def lbp_test(data, K=25, alpha=0.05):
     """
     Computes the modified Ljung-Box-Pierce statistic using K considered correlations.
     

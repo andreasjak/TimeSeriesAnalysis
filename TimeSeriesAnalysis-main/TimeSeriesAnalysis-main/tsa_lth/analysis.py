@@ -47,7 +47,7 @@ def acf(y, maxOrd='auto', signLvl=0.05, plotIt=False, maOrder=0, includeZeroLag=
         raise ValueError('ACF: not a valid level of significance.')
     
     signScale = scipy.stats.norm.ppf(1 - signLvl / 2, 0, 1)
-    rho, _ = stats.acf(y, nlags=maxOrd, alpha=signLvl, fft=False)
+    rho = stats.acf(y, nlags=maxOrd, fft=False)
 
     if includeZeroLag:
         rangeLags = np.arange(0, maxOrd + 1)
@@ -771,25 +771,27 @@ def covMvect(y, meanD=None, fb=False):
     The data is assumed to have a 1 x m mean vector meanD; if not given, it is 
     estimated. If fb is set, forward-backward averaging is used.
     """
-    data = np.atleast_2d(y)
-    m,N = data.shape
+    data = np.asarray(y, dtype=float)
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
+    N,m = data.shape
     if meanD is None:
-        meanD = np.mean(data, axis=1).reshape(-1,1)
+        meanD = np.mean(data, axis=0).reshape(1,-1)
     else:
-        
-        m1,n1 = meanD.shape
+        meanD = np.atleast_2d(meanD)
+        n1,m1 = meanD.shape
         # Check dimensionality
         if n1 == m and m1 == 1:  # If flipped, transpose to row vector.
             meanD = meanD.T
-            m1, n1 = n1, m1
+            n1, m1 = m1, n1
         if m1 != m:
             raise ValueError("Incompatible dimensions for mean vector and data.")
-    
+
     # Compensate for mean value
-    data = data - np.ones((m,N)) * meanD
-    
+    data = data - np.ones((N,1)) @ meanD
+
     # Form forward-only covariance matrix
-    R = data @ data.T / (N-1)
+    R = data.T @ data / (N-1)
     
     if fb:
         H = np.fliplr(np.eye(m))  # Exchange matrix
@@ -917,7 +919,7 @@ def naive_pred(data, test_data_ind, k, season_k=None):
     else:
         # Use the corresponding value from last season
         for t in range(len(data) - k):
-            if t - season_k + k > 0:
+            if t - season_k + k >= 0:
                 naive_est[t + k] = data[t - season_k + k]
             else:
                 naive_est[t + k] = 0
@@ -979,3 +981,96 @@ def plotWithConf(time, data, xStd, trueParams=None):
     if trueParams is not None:
         for k in range(len(trueParams)):
             plt.axhline(y=trueParams[k], color='red', linestyle='--')
+
+def covM(x, L, fb=False):
+    """
+    Estimates the L x L covariance matrix of the data x (Python version of covM.m).
+
+    Parameters:
+    - x (array-like): Data vector.
+    - L (int): Size of the covariance matrix.
+    - fb (bool): If True, forward-backward averaging is used. Default is False.
+
+    Returns:
+    - Rx (ndarray): The L x L covariance matrix estimate.
+    """
+    x = np.asarray(x).flatten()
+    N = len(x)
+    x = x - np.mean(x)
+
+    import scipy.linalg
+    yv = scipy.linalg.hankel(x[:L], x[L-1:])
+    if fb:
+        yb = np.conj(scipy.linalg.hankel(x[::-1][:L], x[N-L::-1]))
+        Rx = (yv @ yv.conj().T + yb @ yb.conj().T) / (2*(N-L+1))
+    else:
+        Rx = (yv @ yv.conj().T) / (N-L+1)
+    return Rx
+
+
+def plot_nt_dist(data, titleStr='Probability plot'):
+    """
+    Shows how well the data fits a Normal and a t-distribution (Python version of plotNTdist.m).
+
+    Parameters:
+    - data (array-like): Data to examine.
+    - titleStr (str): Title of the plot.
+    """
+    data = np.sort(np.asarray(data).flatten())
+    n = len(data)
+    p = (np.arange(1, n+1) - 0.5) / n                  # Plotting positions
+    df, loc, scale = scipy.stats.t.fit(data)            # ML fit of a location-scale t-distribution
+
+    # Show the data on a normal probability scale, as MATLAB's probplot does.
+    z = scipy.stats.norm.ppf(p)
+    mu, sigma = np.mean(data), np.std(data, ddof=1)
+    t_cdf = scipy.stats.t.cdf(data, df, loc=loc, scale=scale)
+
+    plt.figure()
+    plt.plot(mu + sigma*z, z, 'r-', label='Normal dist')
+    plt.plot(data, z, 'b+', label='Data')
+    plt.plot(data, scipy.stats.norm.ppf(np.clip(t_cdf, 1e-12, 1-1e-12)), 'k:', label='t dist')
+    plt.xlabel('Data')
+    plt.ylabel('Normal quantile')
+    plt.title(titleStr)
+    plt.legend(loc='upper left')
+    plt.grid(True)
+    plt.show()
+
+
+def examine_prediction(data, predData, k, usedModel=None, noLags=50):
+    """
+    Evaluates a k-step prediction (Python version of examinePrediction.m).
+
+    Prints the normalized variance of the prediction residual. For k=1, it also tests if the
+    residual is white and if its PACF is normal distributed. If a fitted model is given, it
+    checks the significance of the estimated parameters.
+
+    Parameters:
+    - data (array-like): The true data.
+    - predData (array-like): The predicted data, aligned with data.
+    - k (int): Prediction horizon.
+    - usedModel (PEMResult, optional): The model used to form the prediction.
+    - noLags (int): Number of lags used for the PACF. Default is 50.
+    """
+    from tsa_lth.tests import whiteness_test, check_if_normal
+
+    data = np.asarray(data).flatten()
+    diffPred = data - np.asarray(predData).flatten()
+    varData = np.var(data)
+    varPred = np.var(diffPred)
+
+    print('Evaluating the prediction residual')
+    if varPred > varData:
+        print('  WARNING: prediction residual has higher variance than the data!')
+    print(f'  The normalized variance of the prediction is {varPred/varData:7.4f}.')
+
+    # If k==1, check if the residual is white and if the used PACF is normal distributed.
+    if k == 1:
+        whiteness_test(diffPred)
+        pacfEst = pacf(diffPred, noLags, 0.05)
+        check_if_normal(pacfEst[k:], which_test='D')  # pacfEst[0] is lag 0
+
+    # Check for insignificant parameters.
+    if usedModel is not None:
+        check_for_significance(usedModel)
